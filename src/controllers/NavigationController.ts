@@ -1,12 +1,14 @@
 import { PageController } from './PageController';
 import { ZoomController } from './ZoomController';
 import { RotateController } from './RotateController';
+import { ViewModeController, ViewMode } from './ViewModeController';
 
 export interface NavigationControllerOptions {
   container: HTMLElement;
   pageController: PageController;
   zoomController: ZoomController;
   rotateController: RotateController;
+  viewModeController: ViewModeController;
 }
 
 export class NavigationController {
@@ -14,16 +16,19 @@ export class NavigationController {
   private pageController: PageController;
   private zoomCtrl: ZoomController;
   private rotateCtrl: RotateController;
+  private viewModeCtrl: ViewModeController;
 
   private pageChangeCallbacks: Set<(pageNumber: number) => void> = new Set();
   private zoomChangeCallbacks: Set<(scale: number) => void> = new Set();
   private rotationChangeCallbacks: Set<(rotation: number) => void> = new Set();
+  private viewModeChangeCallbacks: Set<(mode: ViewMode) => void> = new Set();
 
   constructor(options: NavigationControllerOptions) {
     this.container = options.container;
     this.pageController = options.pageController;
     this.zoomCtrl = options.zoomController;
     this.rotateCtrl = options.rotateController;
+    this.viewModeCtrl = options.viewModeController;
 
     this.setupScrollListener();
     this.setupKeyboardShortcuts();
@@ -240,6 +245,24 @@ export class NavigationController {
     return this.rotateCtrl.getRotation();
   }
 
+  public getViewMode(): ViewMode {
+    return this.viewModeCtrl.getMode();
+  }
+
+  public setViewMode(mode: ViewMode): void {
+    this.viewModeCtrl.setMode(mode);
+    this.pageController.setViewMode(mode);
+    this.notifyViewModeChange(mode);
+  }
+
+  public toggleScrollMode(): void {
+    this.setViewMode('scroll');
+  }
+
+  public toggleSingleMode(): void {
+    this.setViewMode('single');
+  }
+
   public onPageChange(callback: (pageNumber: number) => void): () => void {
     this.pageChangeCallbacks.add(callback);
     return () => this.pageChangeCallbacks.delete(callback);
@@ -253,6 +276,11 @@ export class NavigationController {
   public onRotationChange(callback: (rotation: number) => void): () => void {
     this.rotationChangeCallbacks.add(callback);
     return () => this.rotationChangeCallbacks.delete(callback);
+  }
+
+  public onViewModeChange(callback: (mode: ViewMode) => void): () => void {
+    this.viewModeChangeCallbacks.add(callback);
+    return () => this.viewModeChangeCallbacks.delete(callback);
   }
 
   private notifyPageChange(pageNumber: number): void {
@@ -285,6 +313,16 @@ export class NavigationController {
     }
   }
 
+  private notifyViewModeChange(mode: ViewMode): void {
+    for (const callback of this.viewModeChangeCallbacks) {
+      try {
+        callback(mode);
+      } catch (e) {
+        console.error('Error in view mode change callback:', e);
+      }
+    }
+  }
+
   public canZoomIn(): boolean {
     return this.zoomCtrl.canZoomIn();
   }
@@ -305,5 +343,6 @@ export class NavigationController {
     this.pageChangeCallbacks.clear();
     this.zoomChangeCallbacks.clear();
     this.rotationChangeCallbacks.clear();
+    this.viewModeChangeCallbacks.clear();
   }
 }

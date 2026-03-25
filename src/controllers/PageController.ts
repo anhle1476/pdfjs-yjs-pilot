@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
+import { ViewModeController, ViewMode } from './ViewModeController';
 
 export interface PageView {
   pageNumber: number;
@@ -18,10 +19,12 @@ export class PageController {
   private currentPageNumber: number = 1;
   private scale: number = 1;
   private rotation: number = 0;
+  private viewModeController: ViewModeController;
   private annotationCallbacks: Set<(pageNumber: number, annotations: any[]) => void> = new Set();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, viewModeController: ViewModeController) {
     this.container = container;
+    this.viewModeController = viewModeController;
     this.setupContainer();
   }
 
@@ -34,7 +37,22 @@ export class PageController {
   public async initialize(pdfDoc: PDFDocumentProxy): Promise<void> {
     this.pdfDoc = pdfDoc;
     this.currentPageNumber = 1;
-    await this.renderAllPages();
+    await this.renderPagesForCurrentView();
+  }
+
+  private async renderPagesForCurrentView(): Promise<void> {
+    if (!this.pdfDoc) return;
+
+    const mode = this.viewModeController.getMode();
+    const currentPage = this.currentPageNumber;
+    const totalPages = this.pdfDoc.numPages;
+
+    if (mode === 'scroll') {
+      await this.renderAllPages();
+    } else {
+      const pagesToRender = this.viewModeController.getPagesToRender(currentPage, totalPages);
+      await this.renderVisiblePages(pagesToRender);
+    }
   }
 
   private async renderAllPages(): Promise<void> {
@@ -43,6 +61,23 @@ export class PageController {
     const fragment = document.createDocumentFragment();
 
     for (let pageNum = 1; pageNum <= this.pdfDoc.numPages; pageNum++) {
+      const pageView = await this.createPageView(pageNum);
+      this.pageViews.set(pageNum, pageView);
+      fragment.appendChild(pageView.container);
+    }
+
+    this.container.appendChild(fragment);
+  }
+
+  private async renderVisiblePages(pageNumbers: number[]): Promise<void> {
+    if (!this.pdfDoc) return;
+
+    this.container.innerHTML = '';
+    this.pageViews.clear();
+
+    const fragment = document.createDocumentFragment();
+
+    for (const pageNum of pageNumbers) {
       const pageView = await this.createPageView(pageNum);
       this.pageViews.set(pageNum, pageView);
       fragment.appendChild(pageView.container);
@@ -145,7 +180,14 @@ export class PageController {
 
   public setCurrentPage(pageNumber: number): void {
     if (pageNumber >= 1 && pageNumber <= this.getPageCount()) {
+      const previousPage = this.currentPageNumber;
       this.currentPageNumber = pageNumber;
+
+      if (!this.viewModeController.isScrollMode() && previousPage !== pageNumber) {
+        this.renderVisiblePages(
+          this.viewModeController.getPagesToRender(pageNumber, this.getPageCount())
+        );
+      }
     }
   }
 
@@ -172,6 +214,19 @@ export class PageController {
     this.rebuildAllPages();
   }
 
+  public setViewMode(mode: ViewMode): void {
+    this.viewModeController.setMode(mode);
+    this.renderPagesForCurrentView();
+  }
+
+  public getViewMode(): ViewMode {
+    return this.viewModeController.getMode();
+  }
+
+  public getViewModeController(): ViewModeController {
+    return this.viewModeController;
+  }
+
   private async rebuildAllPages(): Promise<void> {
     if (!this.pdfDoc) return;
 
@@ -182,12 +237,11 @@ export class PageController {
       currentPageOffset = currentPageView.container.offsetTop;
     }
 
-    this.container.innerHTML = '';
-    this.pageViews.clear();
+    await this.renderPagesForCurrentView();
 
-    await this.renderAllPages();
-
-    this.container.scrollTop = currentPageOffset;
+    if (this.viewModeController.isScrollMode()) {
+      this.container.scrollTop = currentPageOffset;
+    }
   }
 
   public scrollToPage(pageNumber: number): void {

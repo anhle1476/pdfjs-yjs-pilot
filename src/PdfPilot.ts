@@ -12,6 +12,7 @@ import {
   ZoomController,
   RotateController,
   NavigationController,
+  ViewModeController,
 } from './controllers';
 
 export interface PdfPilotOptions {
@@ -29,6 +30,7 @@ export class PdfPilot {
   private pageController: PageController | null = null;
   private zoomController: ZoomController | null = null;
   private rotateController: RotateController | null = null;
+  private viewModeController: ViewModeController | null = null;
   private navigationController: NavigationController | null = null;
 
   private toolManager: ToolManager | null = null;
@@ -80,7 +82,8 @@ export class PdfPilot {
   }
 
   private setupControllers(): void {
-    this.pageController = new PageController(this.container);
+    this.viewModeController = new ViewModeController();
+    this.pageController = new PageController(this.container, this.viewModeController);
     this.zoomController = new ZoomController();
     this.rotateController = new RotateController();
 
@@ -89,6 +92,7 @@ export class PdfPilot {
       pageController: this.pageController,
       zoomController: this.zoomController,
       rotateController: this.rotateController,
+      viewModeController: this.viewModeController,
     });
   }
 
@@ -359,6 +363,26 @@ export class PdfPilot {
 
   public rotateCounterClockwise(): void {
     this.navigationController?.rotateCounterClockwise();
+  }
+
+  public getViewMode(): 'scroll' | 'single' {
+    return this.navigationController?.getViewMode() ?? 'scroll';
+  }
+
+  public setViewMode(mode: 'scroll' | 'single'): void {
+    this.navigationController?.setViewMode(mode);
+  }
+
+  public toggleScrollMode(): void {
+    this.navigationController?.toggleScrollMode();
+  }
+
+  public toggleSingleMode(): void {
+    this.navigationController?.toggleSingleMode();
+  }
+
+  public onViewModeChange(callback: (mode: 'scroll' | 'single') => void): () => void {
+    return this.navigationController?.onViewModeChange(callback) ?? (() => {});
   }
 
   public getCurrentPage(): number {

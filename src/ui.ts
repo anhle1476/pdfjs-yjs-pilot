@@ -9,13 +9,16 @@ export interface SidebarOptions {
   onZoomOut: () => void;
   onFitPage: () => void;
   onRotateCW: () => void;
+  onViewModeChange: (mode: 'scroll' | 'single') => void;
   getPageInfo: () => { current: number; total: number };
   getZoomPercent: () => number;
+  getViewMode: () => 'scroll' | 'single';
 }
 
 let currentOptions: SidebarOptions | null = null;
 let pageInfoEl: HTMLElement | null = null;
 let zoomInfoEl: HTMLElement | null = null;
+let viewModeInfoEl: HTMLElement | null = null;
 
 export function createSidebar(options: SidebarOptions): void {
   currentOptions = options;
@@ -63,6 +66,45 @@ export function createSidebar(options: SidebarOptions): void {
 
   navSection.appendChild(navBtnGroup);
   sidebar.appendChild(navSection);
+
+  const viewModeSection = document.createElement('div');
+  viewModeSection.className = 'sidebar-section';
+
+  const viewModeTitle = document.createElement('h3');
+  viewModeTitle.textContent = 'View Mode';
+  viewModeSection.appendChild(viewModeTitle);
+
+  viewModeInfoEl = document.createElement('div');
+  viewModeInfoEl.className = 'view-mode-info';
+  viewModeInfoEl.textContent = options.getViewMode().toUpperCase();
+  viewModeSection.appendChild(viewModeInfoEl);
+
+  const viewModeButtons = [
+    { id: 'view-scroll', label: 'Scroll', mode: 'scroll' as const },
+    { id: 'view-single', label: 'Single', mode: 'single' as const },
+  ];
+
+  const viewModeBtnGroup = document.createElement('div');
+  viewModeBtnGroup.className = 'btn-group';
+
+  viewModeButtons.forEach((btn) => {
+    const button = document.createElement('button');
+    button.id = btn.id;
+    button.textContent = btn.label;
+    button.className = 'view-mode-btn';
+    button.dataset.mode = btn.mode;
+    if (options.getViewMode() === btn.mode) {
+      button.classList.add('active');
+    }
+    button.addEventListener('click', () => {
+      options.onViewModeChange(btn.mode);
+      updateViewModeInfo();
+    });
+    viewModeBtnGroup.appendChild(button);
+  });
+
+  viewModeSection.appendChild(viewModeBtnGroup);
+  sidebar.appendChild(viewModeSection);
 
   const zoomSection = document.createElement('div');
   zoomSection.className = 'sidebar-section';
@@ -178,5 +220,22 @@ export function updatePageInfo(): void {
 export function updateZoomInfo(): void {
   if (zoomInfoEl && currentOptions) {
     zoomInfoEl.textContent = `${currentOptions.getZoomPercent()}%`;
+  }
+}
+
+export function updateViewModeInfo(): void {
+  if (viewModeInfoEl && currentOptions) {
+    const mode = currentOptions.getViewMode();
+    viewModeInfoEl.textContent = mode.toUpperCase();
+
+    const buttons = document.querySelectorAll('.view-mode-btn');
+    buttons.forEach((btn) => {
+      const button = btn as HTMLButtonElement;
+      if (button.dataset.mode === mode) {
+        button.classList.add('active');
+      } else {
+        button.classList.remove('active');
+      }
+    });
   }
 }

@@ -1,5 +1,5 @@
 import { PdfPilot } from './PdfPilot';
-import { createSidebar, setActiveTool, updatePageInfo, updateZoomInfo } from './ui';
+import { createSidebar, setActiveTool, updatePageInfo, updateZoomInfo, updateViewModeInfo } from './ui';
 import { sync } from './sync';
 import type { Annotation } from './types';
 
@@ -62,6 +62,10 @@ async function main(): Promise<void> {
     onRotateCW: () => {
       pdfPilot.rotateClockwise();
     },
+    onViewModeChange: (mode: 'scroll' | 'single') => {
+      pdfPilot.setViewMode(mode);
+      updateViewModeInfo();
+    },
     getPageInfo: () => {
       return {
         current: pdfPilot.getCurrentPage(),
@@ -70,6 +74,9 @@ async function main(): Promise<void> {
     },
     getZoomPercent: () => {
       return pdfPilot.getZoomPercent();
+    },
+    getViewMode: () => {
+      return pdfPilot.getViewMode();
     },
   });
 
@@ -86,6 +93,7 @@ async function main(): Promise<void> {
 
     updatePageInfo();
     updateZoomInfo();
+    updateViewModeInfo();
   } catch (error: any) {
     console.error('Error loading PDF in main:', error);
     if (loadingText) {
