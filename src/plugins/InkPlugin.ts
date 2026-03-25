@@ -11,6 +11,7 @@ export class InkPlugin implements IToolPlugin {
   public strokeWidth: number = 2;
   private previewPath: string | null = null;
   public onRenderNeeded?: () => void;
+  private currentPageNumber: number = 1;
 
   constructor(sharedStore: AnnotationObject[]) {
     this.store = sharedStore;
@@ -24,6 +25,14 @@ export class InkPlugin implements IToolPlugin {
     this.isDrawing = false;
     this.outliner = null;
     this.canvas = null;
+  }
+
+  setPageNumber(page: number): void {
+    this.currentPageNumber = page;
+  }
+
+  getPageNumber(): number {
+    return this.currentPageNumber;
   }
 
   private getCanvasPoint(e: PointerEvent): { x: number, y: number } {
@@ -41,12 +50,12 @@ export class InkPlugin implements IToolPlugin {
     if (!this.canvas) return;
     this.isDrawing = true;
     const point = this.getCanvasPoint(evt);
-    
+
     this.outliner = new InkDrawOutliner(
-      point.x, 
-      point.y, 
-      this.canvas.width, 
-      this.canvas.height, 
+      point.x,
+      point.y,
+      this.canvas.width,
+      this.canvas.height,
       0,
       this.strokeWidth
     );
@@ -75,6 +84,7 @@ export class InkPlugin implements IToolPlugin {
         this.currentColor,
         this.strokeWidth
       );
+      obj.pageNumber = this.currentPageNumber;
       this.store.push(obj);
     }
 
@@ -95,7 +105,7 @@ export class InkPlugin implements IToolPlugin {
     ctx.scale(scale, scale);
 
     for (const obj of this.store) {
-      if (obj instanceof InkObject) {
+      if (obj instanceof InkObject && obj.pageNumber === this.currentPageNumber) {
         obj.render(ctx, width, height);
       }
     }
@@ -110,18 +120,22 @@ export class InkPlugin implements IToolPlugin {
   private drawSvgPath(ctx: CanvasRenderingContext2D, svgPath: string, color: string, thickness: number, width: number, height: number) {
     ctx.save();
     ctx.scale(width / 10000, height / 10000);
-    
+
     const p = new Path2D(svgPath);
     ctx.strokeStyle = color;
-    ctx.lineWidth = thickness / (width / 10000); 
+    ctx.lineWidth = thickness / (width / 10000);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke(p);
-    
+
     ctx.restore();
   }
 
   getObjects(): AnnotationObject[] {
+    return this.store.filter(obj => obj.pageNumber === this.currentPageNumber);
+  }
+
+  getAllObjects(): AnnotationObject[] {
     return this.store;
   }
 }

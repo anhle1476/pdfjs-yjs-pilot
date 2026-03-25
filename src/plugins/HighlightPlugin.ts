@@ -14,6 +14,7 @@ export class HighlightPlugin implements IToolPlugin {
   public thickness: number = 12;
   public mode: 'free' | 'box' = 'free';
   public onRenderNeeded?: () => void;
+  private _currentPageNumber: number = 1;
 
   constructor(sharedStore: AnnotationObject[]) {
     this._store = sharedStore;
@@ -29,6 +30,22 @@ export class HighlightPlugin implements IToolPlugin {
     this._outliner = null;
     this._freeOutliner = null;
     this._canvas = null;
+  }
+
+  setPageNumber(page: number): void {
+    this._currentPageNumber = page;
+  }
+
+  getPageNumber(): number {
+    return this._currentPageNumber;
+  }
+
+  setColor(color: string): void {
+    this.color = color;
+  }
+
+  setOpacity(opacity: number): void {
+    this.opacity = Math.max(0, Math.min(1, opacity));
   }
 
   private _getCanvasPoint(e: PointerEvent): { x: number, y: number } {
@@ -48,7 +65,7 @@ export class HighlightPlugin implements IToolPlugin {
     const point = this._getCanvasPoint(evt);
     const normalizedX = point.x / this._canvas.width;
     const normalizedY = point.y / this._canvas.height;
-    
+
     if (this.mode === 'box') {
       this._currentBoxes = [{ x: normalizedX, y: normalizedY, width: 0, height: 0 }];
     } else {
@@ -66,7 +83,7 @@ export class HighlightPlugin implements IToolPlugin {
   onPointerMove(evt: PointerEvent): void {
     if (!this._isDrawing || !this._canvas) return;
     const point = this._getCanvasPoint(evt);
-    
+
     if (this.mode === 'box') {
       if (this._currentBoxes.length === 0) return;
       const normalizedX = point.x / this._canvas.width;
@@ -146,6 +163,7 @@ export class HighlightPlugin implements IToolPlugin {
           highlightOutline.toSVGPath(),
           false
         );
+        obj.pageNumber = this._currentPageNumber;
         obj.setOutline(highlightOutline);
         this._store.push(obj);
       }
@@ -153,7 +171,7 @@ export class HighlightPlugin implements IToolPlugin {
       const outline = this._freeOutliner.getOutlines();
       const obj = new HighlightObject(
         `highlight_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-        [], // empty paths for free draw, relies on svgPath
+        [],
         this.color,
         this.opacity,
         {
@@ -166,6 +184,7 @@ export class HighlightPlugin implements IToolPlugin {
         outline.toSVGPath(),
         true
       );
+      obj.pageNumber = this._currentPageNumber;
       obj.setOutline(outline);
       this._store.push(obj);
     }
@@ -188,7 +207,7 @@ export class HighlightPlugin implements IToolPlugin {
     ctx.scale(scale, scale);
 
     for (const obj of this._store) {
-      if (obj instanceof HighlightObject) {
+      if (obj instanceof HighlightObject && obj.pageNumber === this._currentPageNumber) {
         obj.render(ctx, width, height);
       }
     }
@@ -224,14 +243,10 @@ export class HighlightPlugin implements IToolPlugin {
   }
 
   getObjects(): AnnotationObject[] {
+    return this._store.filter(obj => obj.pageNumber === this._currentPageNumber);
+  }
+
+  getAllObjects(): AnnotationObject[] {
     return this._store;
-  }
-
-  setColor(color: string): void {
-    this.color = color;
-  }
-
-  setOpacity(opacity: number): void {
-    this.opacity = Math.max(0, Math.min(1, opacity));
   }
 }

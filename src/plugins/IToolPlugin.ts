@@ -6,6 +6,8 @@ export interface Rect {
 }
 
 export abstract class AnnotationObject {
+  public pageNumber: number = 1;
+
   abstract hitTest(x: number, y: number): boolean;
   abstract getBounds(): Rect;
   abstract move(dx: number, dy: number): void;

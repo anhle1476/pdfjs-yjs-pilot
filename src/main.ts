@@ -1,5 +1,5 @@
 import { PdfPilot } from './PdfPilot';
-import { createSidebar, setActiveTool } from './ui';
+import { createSidebar, setActiveTool, updatePageInfo, updateZoomInfo } from './ui';
 import { sync } from './sync';
 import type { Annotation } from './types';
 
@@ -19,13 +19,19 @@ async function main(): Promise<void> {
       sync.update((draft: unknown) => {
         (draft as Annotation[]).splice(0);
       });
-    }
+    },
+    onPageChange: (_pageNumber: number) => {
+      updatePageInfo();
+    },
+    onZoomChange: (_scale: number) => {
+      updateZoomInfo();
+    },
   });
 
   createSidebar({
     onDraw: () => {
       pdfPilot.setTool('ink');
-      setActiveTool('draw'); // Note: UI uses 'draw' internally for the button class
+      setActiveTool('draw');
     },
     onText: () => {
       pdfPilot.setTool('text');
@@ -37,6 +43,33 @@ async function main(): Promise<void> {
     },
     onClear: () => {
       pdfPilot.clearAnnotations();
+    },
+    onPrevPage: () => {
+      pdfPilot.previousPage();
+    },
+    onNextPage: () => {
+      pdfPilot.nextPage();
+    },
+    onZoomIn: () => {
+      pdfPilot.zoomIn();
+    },
+    onZoomOut: () => {
+      pdfPilot.zoomOut();
+    },
+    onFitPage: () => {
+      pdfPilot.fitToPage();
+    },
+    onRotateCW: () => {
+      pdfPilot.rotateClockwise();
+    },
+    getPageInfo: () => {
+      return {
+        current: pdfPilot.getCurrentPage(),
+        total: pdfPilot.getTotalPages(),
+      };
+    },
+    getZoomPercent: () => {
+      return pdfPilot.getZoomPercent();
     },
   });
 
@@ -50,6 +83,9 @@ async function main(): Promise<void> {
     await pdfPilot.loadDocument(url);
     console.log('PDF loaded successfully');
     if (loadingText) loadingText.style.display = 'none';
+
+    updatePageInfo();
+    updateZoomInfo();
   } catch (error: any) {
     console.error('Error loading PDF in main:', error);
     if (loadingText) {
@@ -70,7 +106,6 @@ async function main(): Promise<void> {
   pdfPilot.loadAnnotations(initialAnnotations);
 }
 
-// Add global error handler for uncaught promises
 window.addEventListener('unhandledrejection', event => {
   console.error('Unhandled promise rejection:', event.reason);
 });

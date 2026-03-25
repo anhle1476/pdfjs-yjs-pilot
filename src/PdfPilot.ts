@@ -4,185 +4,219 @@ import { HighlightPlugin } from './plugins/HighlightPlugin';
 import { AnnotationObject } from './plugins/IToolPlugin';
 import { ToolManager } from './tools';
 import { Annotation, ToolType } from './types';
+import {
+  PageController,
+  ZoomController,
+  RotateController,
+  NavigationController,
+} from './controllers';
 
 export interface PdfPilotOptions {
   workerSrc?: string;
   onAnnotationCreated?: (annotation: Annotation) => void;
   onAnnotationsCleared?: () => void;
+  onPageChange?: (pageNumber: number) => void;
+  onZoomChange?: (scale: number) => void;
 }
 
 export class PdfPilot {
   private container: HTMLElement;
-  private viewerCanvas: HTMLCanvasElement;
-  private annotationCanvas: HTMLCanvasElement;
-  
-  private currentPage: pdfjsLib.PDFPageProxy | null = null;
-  private currentViewport: pdfjsLib.PageViewport | null = null;
+  private pdfDoc: pdfjsLib.PDFDocumentProxy | null = null;
+
+  private pageController: PageController | null = null;
+  private zoomController: ZoomController | null = null;
+  private rotateController: RotateController | null = null;
+  private navigationController: NavigationController | null = null;
+
   private toolManager: ToolManager | null = null;
-  
+  private currentToolManager: ToolManager | null = null;
+
   private annotations: Map<string, Annotation> = new Map();
   private sharedStore: AnnotationObject[] = [];
   private inkPlugin: InkPlugin;
   private highlightPlugin: HighlightPlugin;
   private options: PdfPilotOptions;
 
+  private currentPageNumber: number = 1;
+
   constructor(container: HTMLElement, options: PdfPilotOptions = {}) {
     this.container = container;
     this.options = options;
     this.inkPlugin = new InkPlugin(this.sharedStore);
     this.highlightPlugin = new HighlightPlugin(this.sharedStore);
-    
-    // Setup worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = options.workerSrc || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@^5.5.207/build/pdf.worker.min.mjs';
 
-    // Setup DOM
-    this.container.style.position = 'relative';
-    this.container.style.overflow = 'auto';
-
-    this.viewerCanvas = document.createElement('canvas');
-    this.viewerCanvas.style.position = 'absolute';
-    this.viewerCanvas.style.top = '0';
-    this.viewerCanvas.style.left = '0';
-    this.viewerCanvas.style.zIndex = '1';
-
-    this.annotationCanvas = document.createElement('canvas');
-    this.annotationCanvas.style.position = 'absolute';
-    this.annotationCanvas.style.top = '0';
-    this.annotationCanvas.style.left = '0';
-    this.annotationCanvas.style.zIndex = '2';
-    this.annotationCanvas.style.cursor = 'crosshair';
-
-    this.container.appendChild(this.viewerCanvas);
-    this.container.appendChild(this.annotationCanvas);
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      options.workerSrc ||
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@^5.5.207/build/pdf.worker.min.mjs';
   }
 
-  public async loadDocument(url: string, pageNumber: number = 1): Promise<void> {
+  public async loadDocument(url: string): Promise<void> {
     const loadingTask = pdfjsLib.getDocument(url);
-    const pdfDoc = await loadingTask.promise;
-    
-    this.currentPage = await pdfDoc.getPage(pageNumber);
-    
-    const scale = window.devicePixelRatio || 1;
-    this.currentViewport = this.currentPage.getViewport({ scale: 1 });
+    this.pdfDoc = await loadingTask.promise;
 
-    const width = this.currentViewport.width;
-    const height = this.currentViewport.height;
+    this.setupControllers();
+    await this.pageController!.initialize(this.pdfDoc);
 
-    // Create an inner wrapper for canvases to center them
-    let canvasWrapper = this.container.querySelector('.canvas-wrapper') as HTMLElement;
-    if (!canvasWrapper) {
-      canvasWrapper = document.createElement('div');
-      canvasWrapper.className = 'canvas-wrapper';
-      canvasWrapper.style.position = 'relative';
-      canvasWrapper.style.margin = '20px auto';
-      this.container.appendChild(canvasWrapper);
-      
-      canvasWrapper.appendChild(this.viewerCanvas);
-      canvasWrapper.appendChild(this.annotationCanvas);
-    }
-    
-    canvasWrapper.style.width = `${width}px`;
-    canvasWrapper.style.height = `${height}px`;
-
-    // Resize viewer canvas
-    this.viewerCanvas.width = width * scale;
-    this.viewerCanvas.height = height * scale;
-    this.viewerCanvas.style.width = `${width}px`;
-    this.viewerCanvas.style.height = `${height}px`;
-
-    // Resize annotation canvas
-    this.annotationCanvas.width = width * scale;
-    this.annotationCanvas.height = height * scale;
-    this.annotationCanvas.style.width = `${width}px`;
-    this.annotationCanvas.style.height = `${height}px`;
-
-    const ctx = this.viewerCanvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(scale, scale);
-      
-      const renderContext = {
-        canvasContext: ctx,
-        viewport: this.currentViewport,
-        canvas: this.viewerCanvas,
-      };
-      
-      // Some versions of PDF.js might require passing canvas or just canvasContext
-      try {
-        await this.currentPage.render(renderContext).promise;
-      } catch (e) {
-        console.error('Render error:', e);
-      }
-    }
-
-    // Setup ToolManager
     this.setupToolManager();
+    this.setupAnnotationPlugins();
 
-    // Setup InkPlugin
-    const ctx2 = this.annotationCanvas.getContext('2d');
-    if (ctx2) {
-      this.inkPlugin.activate(this.annotationCanvas);
-      this.inkPlugin.onRenderNeeded = () => this.renderAnnotations();
+    this.navigationController!.onPageChange((pageNum) => {
+      this.currentPageNumber = pageNum;
+      this.setupAnnotationPluginsForCurrentPage();
+      if (this.options.onPageChange) {
+        this.options.onPageChange(pageNum);
+      }
+    });
 
-      this.highlightPlugin.activate(this.annotationCanvas, ctx2);
-      this.highlightPlugin.onRenderNeeded = () => this.renderAnnotations();
-
-      this.annotationCanvas.addEventListener('pointerdown', (e) => {
-        if (this.toolManager?.getTool() === 'ink') this.inkPlugin.onPointerDown(e);
-        if (this.toolManager?.getTool() === 'highlight') this.highlightPlugin.onPointerDown(e);
-      });
-      this.annotationCanvas.addEventListener('pointermove', (e) => {
-        if (this.toolManager?.getTool() === 'ink') this.inkPlugin.onPointerMove(e);
-        if (this.toolManager?.getTool() === 'highlight') this.highlightPlugin.onPointerMove(e);
-      });
-      this.annotationCanvas.addEventListener('pointerup', (e) => {
-        if (this.toolManager?.getTool() === 'ink') {
-          this.inkPlugin.onPointerUp(e);
-        }
-        if (this.toolManager?.getTool() === 'highlight') {
-          this.highlightPlugin.onPointerUp(e);
-        }
-      });
-    }
-
-    this.renderAnnotations();
+    this.navigationController!.onZoomChange((scale) => {
+      if (this.options.onZoomChange) {
+        this.options.onZoomChange(scale);
+      }
+    });
   }
 
-  private setupToolManager() {
+  private setupControllers(): void {
+    this.pageController = new PageController(this.container);
+    this.zoomController = new ZoomController();
+    this.rotateController = new RotateController();
+
+    this.navigationController = new NavigationController({
+      container: this.container,
+      pageController: this.pageController,
+      zoomController: this.zoomController,
+      rotateController: this.rotateController,
+    });
+  }
+
+  private setupToolManager(): void {
+    const currentPageView = this.pageController?.getCurrentPageView();
+    if (!currentPageView) return;
+
     if (this.toolManager) {
       this.toolManager.destroy();
     }
 
     this.toolManager = new ToolManager({
-      canvas: this.annotationCanvas,
-      getPage: () => this.currentPage?.pageNumber || 1,
+      canvas: currentPageView.annotationCanvas,
+      getPage: () => this.currentPageNumber,
       onAnnotationPreview: (_svgPath, _color, _thickness) => {
         if (this.toolManager?.getTool() !== 'ink') {
-          this.renderAnnotations();
+          this.renderAnnotationsForCurrentPage();
         }
       },
       onAnnotationCreate: (annotation) => {
-        // Since InkPlugin handles ink objects, only add non-ink annotations here
         if (annotation.type !== 'ink') {
           this.addAnnotation(annotation);
           if (this.options.onAnnotationCreated) {
             this.options.onAnnotationCreated(annotation);
           }
         }
+      },
+    });
+
+    this.currentToolManager = this.toolManager;
+  }
+
+  private setupAnnotationPlugins(): void {
+    const currentPageView = this.pageController?.getCurrentPageView();
+    if (!currentPageView) return;
+
+    const ctx = currentPageView.annotationCanvas.getContext('2d');
+    if (!ctx) return;
+
+    this.inkPlugin.setPageNumber(this.currentPageNumber);
+    this.inkPlugin.activate(currentPageView.annotationCanvas);
+    this.inkPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+
+    this.highlightPlugin.setPageNumber(this.currentPageNumber);
+    this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
+    this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+
+    this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
+  }
+
+  private setupAnnotationPluginsForCurrentPage(): void {
+    const currentPageView = this.pageController?.getCurrentPageView();
+    if (!currentPageView) return;
+
+    this.inkPlugin.setPageNumber(this.currentPageNumber);
+    this.inkPlugin.deactivate();
+    this.inkPlugin.activate(currentPageView.annotationCanvas);
+
+    this.highlightPlugin.setPageNumber(this.currentPageNumber);
+    const ctx = currentPageView.annotationCanvas.getContext('2d');
+    if (ctx) {
+      this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
+    }
+
+    this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
+    this.renderAnnotationsForCurrentPage();
+  }
+
+  private setupAnnotationEventListeners(canvas: HTMLCanvasElement): void {
+    canvas.onpointerdown = null;
+    canvas.onpointermove = null;
+    canvas.onpointerup = null;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (this.currentToolManager?.getTool() === 'ink') {
+        this.inkPlugin.onPointerDown(e);
+      }
+      if (this.currentToolManager?.getTool() === 'highlight') {
+        this.highlightPlugin.onPointerDown(e);
+      }
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (this.currentToolManager?.getTool() === 'ink') {
+        this.inkPlugin.onPointerMove(e);
+      }
+      if (this.currentToolManager?.getTool() === 'highlight') {
+        this.highlightPlugin.onPointerMove(e);
+      }
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      if (this.currentToolManager?.getTool() === 'ink') {
+        this.inkPlugin.onPointerUp(e);
+      }
+      if (this.currentToolManager?.getTool() === 'highlight') {
+        this.highlightPlugin.onPointerUp(e);
       }
     });
   }
 
-  // --- Public API ---
+  private renderAnnotationsForCurrentPage(): void {
+    const currentPageView = this.pageController?.getCurrentPageView();
+    if (!currentPageView) return;
+
+    const ctx = currentPageView.annotationCanvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(
+      0,
+      0,
+      currentPageView.annotationCanvas.width,
+      currentPageView.annotationCanvas.height
+    );
+
+    if (this.inkPlugin) {
+      this.inkPlugin.render(ctx);
+    }
+    if (this.highlightPlugin) {
+      this.highlightPlugin.render(ctx);
+    }
+  }
 
   public setTool(tool: ToolType): void {
-    if (this.toolManager) {
-      this.toolManager.setTool(tool);
+    if (this.currentToolManager) {
+      this.currentToolManager.setTool(tool);
     }
   }
 
   public clearAnnotations(): void {
     this.annotations.clear();
-    this.renderAnnotations();
+    this.renderAnnotationsForCurrentPage();
     if (this.options.onAnnotationsCleared) {
       this.options.onAnnotationsCleared();
     }
@@ -190,13 +224,13 @@ export class PdfPilot {
 
   public addAnnotation(annotation: Annotation): void {
     this.annotations.set(annotation.id, annotation);
-    this.renderAnnotations();
+    this.renderAnnotationsForCurrentPage();
   }
 
   public removeAnnotation(id: string): void {
     if (this.annotations.has(id)) {
       this.annotations.delete(id);
-      this.renderAnnotations();
+      this.renderAnnotationsForCurrentPage();
     }
   }
 
@@ -209,27 +243,114 @@ export class PdfPilot {
     for (const ann of annotations) {
       this.annotations.set(ann.id, ann);
     }
-    this.renderAnnotations();
+    this.renderAnnotationsForCurrentPage();
   }
 
-  // --- Rendering ---
+  public goToPage(pageNumber: number): void {
+    this.navigationController?.goToPage(pageNumber);
+  }
 
-  private renderAnnotations(): void {
-    const ctx = this.annotationCanvas.getContext('2d');
-    if (!ctx) return;
+  public nextPage(): void {
+    this.navigationController?.nextPage();
+  }
 
-    if (this.inkPlugin) {
-      this.inkPlugin.render(ctx);
-    }
-    if (this.highlightPlugin) {
-      this.highlightPlugin.render(ctx);
-    }
+  public previousPage(): void {
+    this.navigationController?.previousPage();
+  }
+
+  public firstPage(): void {
+    this.navigationController?.firstPage();
+  }
+
+  public lastPage(): void {
+    this.navigationController?.lastPage();
+  }
+
+  public zoomIn(): void {
+    this.navigationController?.zoomIn();
+  }
+
+  public zoomOut(): void {
+    this.navigationController?.zoomOut();
+  }
+
+  public setZoom(scale: number): void {
+    this.navigationController?.setZoom(scale);
+  }
+
+  public zoomTo(percent: number): void {
+    this.navigationController?.zoomTo(percent);
+  }
+
+  public fitToWidth(): void {
+    this.navigationController?.fitToWidth();
+  }
+
+  public fitToPage(): void {
+    this.navigationController?.fitToPage();
+  }
+
+  public rotateClockwise(): void {
+    this.navigationController?.rotateClockwise();
+  }
+
+  public rotateCounterClockwise(): void {
+    this.navigationController?.rotateCounterClockwise();
+  }
+
+  public getCurrentPage(): number {
+    return this.navigationController?.getCurrentPage() ?? 1;
+  }
+
+  public getTotalPages(): number {
+    return this.navigationController?.getTotalPages() ?? 0;
+  }
+
+  public getZoom(): number {
+    return this.navigationController?.getZoom() ?? 1;
+  }
+
+  public getZoomPercent(): number {
+    return this.navigationController?.getZoomPercent() ?? 100;
+  }
+
+  public getRotation(): number {
+    return this.navigationController?.getRotation() ?? 0;
+  }
+
+  public onPageChange(callback: (pageNumber: number) => void): () => void {
+    return this.navigationController?.onPageChange(callback) ?? (() => {});
+  }
+
+  public onZoomChange(callback: (scale: number) => void): () => void {
+    return this.navigationController?.onZoomChange(callback) ?? (() => {});
+  }
+
+  public onRotationChange(callback: (rotation: number) => void): () => void {
+    return this.navigationController?.onRotationChange(callback) ?? (() => {});
+  }
+
+  public getPageController(): PageController | null {
+    return this.pageController;
+  }
+
+  public getNavigationController(): NavigationController | null {
+    return this.navigationController;
+  }
+
+  public getAnnotationCanvas(): HTMLCanvasElement | null {
+    return this.pageController?.getCurrentPageView()?.annotationCanvas ?? null;
   }
 
   public destroy(): void {
     if (this.toolManager) {
       this.toolManager.destroy();
     }
+    this.navigationController?.destroy();
+    this.pageController?.destroy();
+    this.inkPlugin.deactivate();
+    this.highlightPlugin.deactivate();
     this.container.innerHTML = '';
+    this.pdfDoc = null;
   }
 }
