@@ -62,8 +62,8 @@ async function main(): Promise<void> {
     onRotateCW: () => {
       pdfPilot.rotateClockwise();
     },
-    onViewModeChange: (mode: 'scroll' | 'single') => {
-      pdfPilot.setViewMode(mode);
+    onViewModeChange: async (mode: 'scroll' | 'single') => {
+      await pdfPilot.setViewMode(mode);
       updateViewModeInfo();
     },
     getPageInfo: () => {

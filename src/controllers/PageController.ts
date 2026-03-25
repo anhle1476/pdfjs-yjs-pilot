@@ -214,9 +214,9 @@ export class PageController {
     this.rebuildAllPages();
   }
 
-  public setViewMode(mode: ViewMode): void {
+  public setViewMode(mode: ViewMode): Promise<void> {
     this.viewModeController.setMode(mode);
-    this.renderPagesForCurrentView();
+    return this.renderPagesForCurrentView();
   }
 
   public getViewMode(): ViewMode {

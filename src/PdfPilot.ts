@@ -369,8 +369,9 @@ export class PdfPilot {
     return this.navigationController?.getViewMode() ?? 'scroll';
   }
 
-  public setViewMode(mode: 'scroll' | 'single'): void {
-    this.navigationController?.setViewMode(mode);
+  public async setViewMode(mode: 'scroll' | 'single'): Promise<void> {
+    await this.navigationController?.setViewMode(mode);
+    this.setupAnnotationPluginsForCurrentPage();
   }
 
   public toggleScrollMode(): void {

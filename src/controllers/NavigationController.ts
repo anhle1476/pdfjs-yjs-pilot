@@ -249,9 +249,9 @@ export class NavigationController {
     return this.viewModeCtrl.getMode();
   }
 
-  public setViewMode(mode: ViewMode): void {
+  public async setViewMode(mode: ViewMode): Promise<void> {
     this.viewModeCtrl.setMode(mode);
-    this.pageController.setViewMode(mode);
+    await this.pageController.setViewMode(mode);
     this.notifyViewModeChange(mode);
   }
 
