@@ -126,7 +126,8 @@ export class InkObject extends AnnotationObject {
       })),
       color: this.color,
       strokeWidth: this.strokeWidth,
-      bounds: { ...this.bounds }
+      bounds: { ...this.bounds },
+      page: this.pageNumber
     };
   }
 
@@ -145,6 +146,7 @@ export class InkObject extends AnnotationObject {
     this.color = data.color;
     this.strokeWidth = data.strokeWidth;
     this.bounds = { ...data.bounds };
+    this.pageNumber = data.page ?? 1;
   }
 
   render(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {

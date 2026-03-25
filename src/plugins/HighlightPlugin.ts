@@ -14,6 +14,7 @@ export class HighlightPlugin implements IToolPlugin {
   public thickness: number = 12;
   public mode: 'free' | 'box' = 'free';
   public onRenderNeeded?: () => void;
+  public onObjectCreated?: (obj: HighlightObject) => void;
   private _currentPageNumber: number = 1;
 
   constructor(sharedStore: AnnotationObject[]) {
@@ -166,6 +167,7 @@ export class HighlightPlugin implements IToolPlugin {
         obj.pageNumber = this._currentPageNumber;
         obj.setOutline(highlightOutline);
         this._store.push(obj);
+        if (this.onObjectCreated) this.onObjectCreated(obj);
       }
     } else if (this.mode === 'free' && this._freeOutliner && !this._freeOutliner.isEmpty()) {
       const outline = this._freeOutliner.getOutlines();
@@ -187,6 +189,7 @@ export class HighlightPlugin implements IToolPlugin {
       obj.pageNumber = this._currentPageNumber;
       obj.setOutline(outline);
       this._store.push(obj);
+      if (this.onObjectCreated) this.onObjectCreated(obj);
     }
 
     this._isDrawing = false;

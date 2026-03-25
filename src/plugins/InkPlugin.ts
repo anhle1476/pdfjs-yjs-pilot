@@ -11,6 +11,7 @@ export class InkPlugin implements IToolPlugin {
   public strokeWidth: number = 2;
   private previewPath: string | null = null;
   public onRenderNeeded?: () => void;
+  public onObjectCreated?: (obj: InkObject) => void;
   private currentPageNumber: number = 1;
 
   constructor(sharedStore: AnnotationObject[]) {
@@ -86,6 +87,7 @@ export class InkPlugin implements IToolPlugin {
       );
       obj.pageNumber = this.currentPageNumber;
       this.store.push(obj);
+      if (this.onObjectCreated) this.onObjectCreated(obj);
     }
 
     this.isDrawing = false;

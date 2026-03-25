@@ -2,8 +2,11 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { InkPlugin } from './plugins/InkPlugin';
 import { HighlightPlugin } from './plugins/HighlightPlugin';
 import { AnnotationObject } from './plugins/IToolPlugin';
+import { InkObject } from './models/InkObject';
+import { HighlightObject } from './models/HighlightObject';
 import { ToolManager } from './tools';
 import { Annotation, ToolType } from './types';
+import { sync } from './sync';
 import {
   PageController,
   ZoomController,
@@ -36,6 +39,7 @@ export class PdfPilot {
   private inkPlugin: InkPlugin;
   private highlightPlugin: HighlightPlugin;
   private options: PdfPilotOptions;
+  private syncUnsubscribe: (() => void) | null = null;
 
   private currentPageNumber: number = 1;
 
@@ -127,12 +131,23 @@ export class PdfPilot {
     this.inkPlugin.setPageNumber(this.currentPageNumber);
     this.inkPlugin.activate(currentPageView.annotationCanvas);
     this.inkPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.inkPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        (draft as Annotation[]).push(obj.serialize());
+      });
+    };
 
     this.highlightPlugin.setPageNumber(this.currentPageNumber);
     this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
     this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.highlightPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        (draft as Annotation[]).push(obj.serialize());
+      });
+    };
 
     this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
+    this.setupSyncSubscription();
   }
 
   private setupAnnotationPluginsForCurrentPage(): void {
@@ -142,12 +157,24 @@ export class PdfPilot {
     this.inkPlugin.setPageNumber(this.currentPageNumber);
     this.inkPlugin.deactivate();
     this.inkPlugin.activate(currentPageView.annotationCanvas);
+    this.inkPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.inkPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        (draft as Annotation[]).push(obj.serialize());
+      });
+    };
 
     this.highlightPlugin.setPageNumber(this.currentPageNumber);
     const ctx = currentPageView.annotationCanvas.getContext('2d');
     if (ctx) {
       this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
     }
+    this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.highlightPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        (draft as Annotation[]).push(obj.serialize());
+      });
+    };
 
     this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
     this.renderAnnotationsForCurrentPage();
@@ -205,6 +232,42 @@ export class PdfPilot {
     }
     if (this.highlightPlugin) {
       this.highlightPlugin.render(ctx);
+    }
+  }
+
+  private setupSyncSubscription(): void {
+    if (this.syncUnsubscribe) return;
+
+    this.syncUnsubscribe = sync.subscribe(() => {
+      const syncedAnnotations = sync.get() as Annotation[];
+      this.sharedStore.length = 0;
+
+      for (const ann of syncedAnnotations) {
+        if (ann.type === 'ink') {
+          const inkObj = new InkObject();
+          inkObj.deserialize(ann);
+          this.sharedStore.push(inkObj);
+        } else if (ann.type === 'highlight') {
+          const highlightObj = new HighlightObject();
+          highlightObj.deserialize(ann);
+          this.sharedStore.push(highlightObj);
+        }
+      }
+
+      this.renderAnnotationsForCurrentPage();
+    });
+
+    const initialAnnotations = sync.get() as Annotation[];
+    for (const ann of initialAnnotations) {
+      if (ann.type === 'ink') {
+        const inkObj = new InkObject();
+        inkObj.deserialize(ann);
+        this.sharedStore.push(inkObj);
+      } else if (ann.type === 'highlight') {
+        const highlightObj = new HighlightObject();
+        highlightObj.deserialize(ann);
+        this.sharedStore.push(highlightObj);
+      }
     }
   }
 
@@ -350,6 +413,10 @@ export class PdfPilot {
     this.pageController?.destroy();
     this.inkPlugin.deactivate();
     this.highlightPlugin.deactivate();
+    if (this.syncUnsubscribe) {
+      this.syncUnsubscribe();
+      this.syncUnsubscribe = null;
+    }
     this.container.innerHTML = '';
     this.pdfDoc = null;
   }

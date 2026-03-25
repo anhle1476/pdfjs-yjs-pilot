@@ -178,7 +178,8 @@ export class HighlightObject extends AnnotationObject {
       opacity: this.opacity,
       bounds: { ...this.bounds },
       quadPoints: this.quadPoints ? Array.from(this.quadPoints) : undefined,
-      freeDraw: this.freeDraw
+      freeDraw: this.freeDraw,
+      page: this.pageNumber
     };
   }
 
@@ -191,6 +192,7 @@ export class HighlightObject extends AnnotationObject {
     this.bounds = { ...data.bounds };
     this.quadPoints = data.quadPoints ? new Float32Array(data.quadPoints) : undefined;
     this.freeDraw = !!data.freeDraw;
+    this.pageNumber = data.page ?? 1;
   }
 
   render(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
