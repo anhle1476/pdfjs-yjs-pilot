@@ -24,19 +24,31 @@ export interface HighlightData {
   height: number;
 }
 
-export type AnnotationType = 'ink' | 'text' | 'highlight';
+export interface FreeTextData {
+  content: string;
+  fontSize: number;
+  color: string;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export type AnnotationType = 'ink' | 'text' | 'highlight' | 'freetext';
 
 export interface Annotation {
   id: string;
   type: AnnotationType;
   page: number;
   position: Point;
-  data: InkData | TextData | HighlightData;
+  data: InkData | TextData | HighlightData | FreeTextData;
   color: string;
   createdAt: number;
 }
 
-export type ToolType = 'ink' | 'text' | 'highlight' | null;
+export type ToolType = 'ink' | 'text' | 'highlight' | 'freetext' | null;
 
 export interface ToolState {
   activeTool: ToolType;

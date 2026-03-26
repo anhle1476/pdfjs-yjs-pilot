@@ -1,9 +1,11 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { InkPlugin } from './plugins/InkPlugin';
 import { HighlightPlugin } from './plugins/HighlightPlugin';
+import { FreeTextPlugin } from './plugins/FreeTextPlugin';
 import { AnnotationObject } from './plugins/IToolPlugin';
 import { InkObject } from './models/InkObject';
 import { HighlightObject } from './models/HighlightObject';
+import { FreeTextObject } from './models/FreeTextObject';
 import { ToolManager } from './tools';
 import { Annotation, ToolType } from './types';
 import { sync } from './sync';
@@ -40,6 +42,7 @@ export class PdfPilot {
   private sharedStore: AnnotationObject[] = [];
   private inkPlugin: InkPlugin;
   private highlightPlugin: HighlightPlugin;
+  private freeTextPlugin: FreeTextPlugin;
   private options: PdfPilotOptions;
   private syncUnsubscribe: (() => void) | null = null;
 
@@ -50,6 +53,10 @@ export class PdfPilot {
     this.options = options;
     this.inkPlugin = new InkPlugin(this.sharedStore);
     this.highlightPlugin = new HighlightPlugin(this.sharedStore);
+    this.freeTextPlugin = new FreeTextPlugin(this.sharedStore, {
+      defaultFontSize: 10,
+      defaultColor: '#000000',
+    });
 
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       options.workerSrc ||
@@ -141,10 +148,49 @@ export class PdfPilot {
       });
     };
 
+    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
+    this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
+    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.freeTextPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        if (!annotations.some(a => a.id === obj.id)) {
+          annotations.push(obj.serialize());
+        }
+      });
+    };
+    this.freeTextPlugin.onObjectUpdated = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        const idx = annotations.findIndex(a => a.id === obj.id);
+        if (idx !== -1) {
+          annotations[idx] = obj.serialize();
+        }
+      });
+    };
+    this.freeTextPlugin.onObjectDeleted = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        const idx = annotations.findIndex(a => a.id === obj.id);
+        if (idx !== -1) {
+          annotations.splice(idx, 1);
+        }
+      });
+    };
+
     this.highlightPlugin.setPageNumber(this.currentPageNumber);
     this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
     this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
     this.highlightPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        (draft as Annotation[]).push(obj.serialize());
+      });
+    };
+
+    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
+    this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
+    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.freeTextPlugin.onObjectCreated = (obj) => {
       sync.update((draft: unknown) => {
         (draft as Annotation[]).push(obj.serialize());
       });
@@ -180,6 +226,39 @@ export class PdfPilot {
       });
     };
 
+    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
+    this.freeTextPlugin.deactivate();
+    if (ctx) {
+      this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
+    }
+    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
+    this.freeTextPlugin.onObjectCreated = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        if (!annotations.some(a => a.id === obj.id)) {
+          annotations.push(obj.serialize());
+        }
+      });
+    };
+    this.freeTextPlugin.onObjectUpdated = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        const idx = annotations.findIndex(a => a.id === obj.id);
+        if (idx !== -1) {
+          annotations[idx] = obj.serialize();
+        }
+      });
+    };
+    this.freeTextPlugin.onObjectDeleted = (obj) => {
+      sync.update((draft: unknown) => {
+        const annotations = draft as Annotation[];
+        const idx = annotations.findIndex(a => a.id === obj.id);
+        if (idx !== -1) {
+          annotations.splice(idx, 1);
+        }
+      });
+    };
+
     this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
     this.renderAnnotationsForCurrentPage();
   }
@@ -196,6 +275,9 @@ export class PdfPilot {
       if (this.currentToolManager?.getTool() === 'highlight') {
         this.highlightPlugin.onPointerDown(e);
       }
+      if (this.currentToolManager?.getTool() === 'freetext') {
+        this.freeTextPlugin.onPointerDown(e);
+      }
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -205,6 +287,9 @@ export class PdfPilot {
       if (this.currentToolManager?.getTool() === 'highlight') {
         this.highlightPlugin.onPointerMove(e);
       }
+      if (this.currentToolManager?.getTool() === 'freetext') {
+        this.freeTextPlugin.onPointerMove(e);
+      }
     });
 
     canvas.addEventListener('pointerup', (e) => {
@@ -213,6 +298,9 @@ export class PdfPilot {
       }
       if (this.currentToolManager?.getTool() === 'highlight') {
         this.highlightPlugin.onPointerUp(e);
+      }
+      if (this.currentToolManager?.getTool() === 'freetext') {
+        this.freeTextPlugin.onPointerUp(e);
       }
     });
   }
@@ -255,10 +343,18 @@ export class PdfPilot {
           const highlightObj = new HighlightObject();
           highlightObj.deserialize(ann);
           this.sharedStore.push(highlightObj);
+        } else if (ann.type === 'freetext') {
+          const freeTextObj = new FreeTextObject();
+          freeTextObj.deserialize(ann);
+          this.sharedStore.push(freeTextObj);
         }
       }
 
       this.renderAnnotationsForCurrentPage();
+      // Ensure FreeText UI is updated
+      if (this.freeTextPlugin) {
+        this.freeTextPlugin.setPageNumber(this.currentPageNumber);
+      }
     });
 
     const initialAnnotations = sync.get() as Annotation[];
@@ -271,7 +367,16 @@ export class PdfPilot {
         const highlightObj = new HighlightObject();
         highlightObj.deserialize(ann);
         this.sharedStore.push(highlightObj);
+      } else if (ann.type === 'freetext') {
+        const freeTextObj = new FreeTextObject();
+        freeTextObj.deserialize(ann);
+        this.sharedStore.push(freeTextObj);
       }
+    }
+    
+    // Ensure initial freetext annotations are rendered
+    if (this.freeTextPlugin) {
+      this.freeTextPlugin.setPageNumber(this.currentPageNumber);
     }
   }
 

@@ -171,7 +171,7 @@ export function createSidebar(options: SidebarOptions): void {
 
   const tools = [
     { id: 'draw', label: '✏️ Draw', handler: options.onDraw },
-    { id: 'text', label: '📝 Text', handler: options.onText },
+    { id: 'freetext', label: '📝 Text', handler: options.onText },
     { id: 'highlight', label: '🖍️ Highlight', handler: options.onHighlight },
   ];
 
@@ -182,7 +182,6 @@ export function createSidebar(options: SidebarOptions): void {
     button.dataset.tool = tool.id;
     button.addEventListener('click', () => {
       tool.handler();
-      setActiveTool(tool.id);
     });
     toolsSection.appendChild(button);
   });

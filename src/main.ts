@@ -9,6 +9,7 @@ async function main(): Promise<void> {
     throw new Error('Viewer container not found');
   }
 
+  let currentActiveTool: string | null = null;
   const pdfPilot = new PdfPilot(viewerContainer, {
     onAnnotationCreated: (annotation: Annotation) => {
       sync.update((draft: unknown) => {
@@ -30,16 +31,43 @@ async function main(): Promise<void> {
 
   createSidebar({
     onDraw: () => {
-      pdfPilot.setTool('ink');
-      setActiveTool('draw');
+      if (currentActiveTool === 'draw') {
+        // Toggle off - deactivate all tools
+        pdfPilot.setTool(null);
+        setActiveTool(null);
+        currentActiveTool = null;
+      } else {
+        // Toggle on - activate draw tool
+        pdfPilot.setTool('ink');
+        setActiveTool('draw');
+        currentActiveTool = 'draw';
+      }
     },
     onText: () => {
-      pdfPilot.setTool('text');
-      setActiveTool('text');
+      if (currentActiveTool === 'freetext') {
+        // Toggle off - deactivate all tools
+        pdfPilot.setTool(null);
+        setActiveTool(null);
+        currentActiveTool = null;
+      } else {
+        // Toggle on - activate text tool
+        pdfPilot.setTool('freetext');
+        setActiveTool('freetext');
+        currentActiveTool = 'freetext';
+      }
     },
     onHighlight: () => {
-      pdfPilot.setTool('highlight');
-      setActiveTool('highlight');
+      if (currentActiveTool === 'highlight') {
+        // Toggle off - deactivate all tools
+        pdfPilot.setTool(null);
+        setActiveTool(null);
+        currentActiveTool = null;
+      } else {
+        // Toggle on - activate highlight tool
+        pdfPilot.setTool('highlight');
+        setActiveTool('highlight');
+        currentActiveTool = 'highlight';
+      }
     },
     onClear: () => {
       pdfPilot.clearAnnotations();

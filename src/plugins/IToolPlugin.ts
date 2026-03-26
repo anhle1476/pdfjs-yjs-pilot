@@ -6,6 +6,7 @@ export interface Rect {
 }
 
 export abstract class AnnotationObject {
+  public id: string = '';
   public pageNumber: number = 1;
 
   abstract hitTest(x: number, y: number): boolean;

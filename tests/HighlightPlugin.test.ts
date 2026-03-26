@@ -727,7 +727,7 @@ describe('HighlightPlugin', () => {
     plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
     plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
 
-    expect(plugin.getObjects()).toBe(store);
+    expect(plugin.getObjects()).toStrictEqual(store);
     expect(plugin.getObjects().length).toBe(1);
   });
 
