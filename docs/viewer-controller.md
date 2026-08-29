@@ -1,47 +1,47 @@
-# PDF.js Viewer Controller Design
+# Thiết kế Bộ điều khiển Trình xem PDF.js (PDF.js Viewer Controller Design)
 
-## 1. Current Implementation Analysis
+## 1. Phân tích Triển khai Hiện tại (Current Implementation Analysis)
 
-### 1.1 PdfPilot.ts Single-Page Limitation
+### 1.1 Hạn chế một trang của PdfPilot.ts (PdfPilot.ts Single-Page Limitation)
 
-The current `PdfPilot.loadDocument()` method only renders **page 1** of the PDF:
+Phương thức `PdfPilot.loadDocument()` hiện tại chỉ kết xuất (render) **trang 1** của tệp PDF:
 
 ```typescript
 public async loadDocument(url: string, pageNumber: number = 1): Promise<void> {
   const pdfDoc = await loadingTask.promise;
-  this.currentPage = await pdfDoc.getPage(pageNumber); // Always page 1 in main.ts
+  this.currentPage = await pdfDoc.getPage(pageNumber); // Luôn là trang 1 trong main.ts
   // ...
 }
 ```
 
-**Problems**:
-- Hardcoded `pageNumber = 1` parameter (never changed)
-- Single canvas pair (viewer + annotation) cannot display multiple pages
-- No scroll container management beyond basic `overflow: auto`
-- No viewport synchronization across pages
+**Các vấn đề**:
+- Tham số `pageNumber = 1` bị ghi cứng (không bao giờ thay đổi)
+- Cặp canvas đơn lẻ (viewer + annotation) không thể hiển thị nhiều trang
+- Không có quản lý container cuộn ngoài việc thiết lập `overflow: auto` cơ bản
+- Không có đồng bộ hóa viewport giữa các trang
 
-### 1.2 Key PDF.js APIs for Multi-Page Rendering
+### 1.2 Các API PDF.js quan trọng cho kết xuất nhiều trang (Key PDF.js APIs for Multi-Page Rendering)
 
-From `display/api.js` and `display/display_utils.js`:
+Từ `display/api.js` và `display/display_utils.js`:
 
-| API | Purpose |
-|-----|---------|
-| `PDFDocumentProxy.numPages` | Total page count |
-| `PDFDocumentProxy.getPage(n)` | Get page proxy by 1-indexed number |
-| `PDFPageProxy.getViewport({ scale, rotation })` | Create viewport for a page |
-| `PageViewport.clone({ scale, rotation })` | Create modified viewport |
-| `PageViewport.convertToViewportPoint(x, y)` | PDF coord → canvas coord |
-| `PDFPageProxy.render(renderContext)` | Render page to canvas |
-| `TextLayer` | Render text overlay per page |
-| `PagesMapper` | Page reordering/manipulation |
+| API | Mục đích |
+|-----|----------|
+| `PDFDocumentProxy.numPages` | Tổng số trang |
+| `PDFDocumentProxy.getPage(n)` | Lấy proxy trang theo số thứ tự (bắt đầu từ 1) |
+| `PDFPageProxy.getViewport({ scale, rotation })` | Tạo viewport cho một trang |
+| `PageViewport.clone({ scale, rotation })` | Tạo viewport đã được sửa đổi |
+| `PageViewport.convertToViewportPoint(x, y)` | Tọa độ PDF → tọa độ canvas |
+| `PDFPageProxy.render(renderContext)` | Kết xuất trang lên canvas |
+| `TextLayer` | Kết xuất lớp phủ văn bản cho từng trang |
+| `PagesMapper` | Sắp xếp lại/thao tác trang |
 
 ---
 
-## 2. Multi-Page Rendering Patterns
+## 2. Các Mô hình Kết xuất Nhiều Trang (Multi-Page Rendering Patterns)
 
-### 2.1 Pattern A: Vertical Scroll (All Pages)
+### 2.1 Mô hình A: Cuộn dọc (Tất cả các trang) (Pattern A: Vertical Scroll - All Pages)
 
-Render all pages sequentially in a vertical stack. User scrolls to navigate.
+Kết xuất tất cả các trang tuần tự theo một chồng dọc. Người dùng cuộn để điều hướng.
 
 ```
 ┌─────────────────────────────┐
@@ -62,39 +62,39 @@ Render all pages sequentially in a vertical stack. User scrolls to navigate.
 └─────────────────────────────┘
 ```
 
-**Pros**: Simple, SEO-friendly, native scroll
-**Cons**: Large PDFs = many canvases, memory heavy
+**Ưu điểm**: Đơn giản, thân thiện với SEO, cuộn tự nhiên
+**Nhược điểm**: Tệp PDF lớn = nhiều canvas, tiêu tốn bộ nhớ
 
-### 2.2 Pattern B: Single Page with Navigation (One at a Time)
+### 2.2 Mô hình B: Một trang với điều hướng (Từng trang một) (Pattern B: Single Page with Navigation - One at a Time)
 
-Only render the current page. Provide prev/next controls.
+Chỉ kết xuất trang hiện tại. Cung cấp các nút điều khiển trước/sau.
 
 ```
 ┌─────────────────────────────┐
 │  ┌───────────────────────┐  │
 │  │                       │  │
-│  │    Current Page       │  │
+│  │    Trang Hiện tại     │  │
 │  │                       │  │
 │  └───────────────────────┘  │
-│  [Prev] Page 3 of 10 [Next]  │
+│  [Trước] Trang 3 / 10 [Sau]  │
 └─────────────────────────────┘
 ```
 
-**Pros**: Memory efficient, fast initial load
-**Cons**: No overview, requires user action to navigate
+**Ưu điểm**: Tiết kiệm bộ nhớ, tải ban đầu nhanh
+**Nhược điểm**: Không có cái nhìn tổng quan, yêu cầu người dùng thao tác để điều hướng
 
-### 2.3 Pattern C: Continuous (Virtualized Scroll)
+### 2.3 Mô hình C: Cuộn liên tục (Cuộn ảo) (Pattern C: Continuous - Virtualized Scroll)
 
-Render visible pages + buffer. Virtual scrolling with recycled canvases.
+Kết xuất các trang đang hiển thị + vùng đệm (buffer). Cuộn ảo với các canvas được tái sử dụng.
 
-**Pros**: Best UX for large documents
-**Cons**: Complex implementation
+**Ưu điểm**: Trải nghiệm người dùng tốt nhất cho các tài liệu lớn
+**Nhược điểm**: Triển khai phức tạp
 
 ---
 
-## 3. Controller Architecture Design
+## 3. Thiết kế Kiến trúc Bộ điều khiển (Controller Architecture Design)
 
-### 3.1 Overview
+### 3.1 Tổng quan (Overview)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -119,16 +119,16 @@ Render visible pages + buffer. Virtual scrolling with recycled canvases.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 PageView (Per-Page Component)
+### 3.2 PageView (Thành phần cho mỗi trang)
 
-Represents one page with its canvases:
+Đại diện cho một trang với các canvas của nó:
 
 ```typescript
 interface PageView {
   pageNumber: number;
   pageProxy: PDFPageProxy;
   viewport: PageViewport;
-  container: HTMLElement;      // Wrapper div
+  container: HTMLElement;      // Div bao ngoài
   viewerCanvas: HTMLCanvasElement;
   annotationCanvas: HTMLCanvasElement;
   textLayer?: TextLayer;
@@ -139,7 +139,7 @@ interface PageView {
 
 ### 3.3 PageController
 
-Manages individual page rendering:
+Quản lý việc kết xuất từng trang:
 
 ```typescript
 class PageController {
@@ -167,7 +167,7 @@ class PageController {
 
 ### 3.4 ZoomController
 
-Handles zoom operations:
+Xử lý các thao tác thu phóng (zoom):
 
 ```typescript
 class ZoomController {
@@ -194,12 +194,12 @@ class ZoomController {
 }
 ```
 
-**Zoom Levels**:
+**Các mức thu phóng (Zoom Levels)**:
 - `setScale(1.0)` = 100%
 - `zoomIn()` → `1.0 + 0.25 = 1.25` (125%)
 - `zoomOut()` → `1.0 - 0.25 = 0.75` (75%)
 
-**Fit Calculations**:
+**Tính toán độ vừa vặn (Fit Calculations)**:
 ```typescript
 fitToWidth(containerWidth, pageWidth) {
   return containerWidth / pageWidth;
@@ -214,7 +214,7 @@ fitToPage(containerWidth, containerHeight, pageWidth, pageHeight) {
 
 ### 3.5 PanController
 
-Manages scrolling/panning:
+Quản lý việc cuộn/di chuyển (panning):
 
 ```typescript
 class PanController {
@@ -228,7 +228,7 @@ class PanController {
   scrollBy(deltaX: number, deltaY: number): void;
   scrollToPage(pageNumber: number, pageTop: number): void;
 
-  pan(dx: number, dy: number): void;  // For mode where drag pans
+  pan(dx: number, dy: number): void;  // Cho chế độ kéo để di chuyển
 
   getScrollPosition(): { x: number; y: number };
 
@@ -238,7 +238,7 @@ class PanController {
 
 ### 3.6 RotateController
 
-Handles page/document rotation:
+Quản lý việc xoay trang/tài liệu:
 
 ```typescript
 class RotateController {
@@ -249,13 +249,13 @@ class RotateController {
   setRotation(degrees: number): number;
   getRotation(): number;
 
-  normalizeRotation(degrees: number): number;  // Clamp to 0-359
+  normalizeRotation(degrees: number): number;  // Giới hạn trong khoảng 0-359
 }
 ```
 
 ### 3.7 NavigationController
 
-High-level API coordinating all controllers:
+API cấp cao điều phối tất cả các bộ điều khiển:
 
 ```typescript
 class NavigationController {
@@ -266,14 +266,14 @@ class NavigationController {
 
   constructor(container: HTMLElement, pdfDoc: PDFDocumentProxy);
 
-  // Navigation
+  // Điều hướng (Navigation)
   goToPage(pageNumber: number): Promise<void>;
   nextPage(): Promise<void>;
   previousPage(): Promise<void>;
   firstPage(): Promise<void>;
   lastPage(): Promise<void>;
 
-  // Zoom
+  // Thu phóng (Zoom)
   zoomIn(): void;
   zoomOut(): void;
   setZoom(scale: number): void;
@@ -281,21 +281,21 @@ class NavigationController {
   fitToPage(): void;
   zoomTo(percent: number): void;
 
-  // Pan
+  // Di chuyển (Pan)
   scrollTo(x: number, y: number): void;
   pan(dx: number, dy: number): void;
 
-  // Rotate
+  // Xoay (Rotate)
   rotateClockwise(): void;
   rotateCounterClockwise(): void;
 
-  // State getters
+  // Các hàm lấy trạng thái (State getters)
   getCurrentPage(): number;
   getTotalPages(): number;
   getZoom(): number;
   getRotation(): number;
 
-  // Events
+  // Sự kiện (Events)
   onPageChange(callback: (pageNumber: number) => void): void;
   onZoomChange(callback: (scale: number) => void): void;
 }
@@ -303,20 +303,20 @@ class NavigationController {
 
 ---
 
-## 4. Integration with PdfPilot.ts
+## 4. Tích hợp với PdfPilot.ts (Integration with PdfPilot.ts)
 
-### 4.1 Modified PdfPilot Architecture
+### 4.1 Kiến trúc PdfPilot đã sửa đổi (Modified PdfPilot Architecture)
 
 ```typescript
 class PdfPilot {
   private container: HTMLElement;
   private pdfDoc: PDFDocumentProxy | null = null;
 
-  // Controller layer
+  // Lớp điều khiển (Controller layer)
   private pageController: PageController | null = null;
   private navigationController: NavigationController | null = null;
 
-  // Existing annotation system (unchanged)
+  // Hệ thống chú thích hiện có (không đổi)
   private inkPlugin: InkPlugin;
   private highlightPlugin: HighlightPlugin;
 
@@ -324,17 +324,17 @@ class PdfPilot {
     const loadingTask = pdfjsLib.getDocument(url);
     this.pdfDoc = await loadingTask.promise;
 
-    // Initialize controllers
+    // Khởi tạo các bộ điều khiển
     this.pageController = new PageController(this.pdfDoc, this.container);
     this.navigationController = new NavigationController(
       this.container,
       this.pdfDoc
     );
 
-    // Setup annotation layer on current page
+    // Thiết lập lớp chú thích trên trang hiện tại
     this.setupAnnotationLayer();
 
-    // Subscribe to sync
+    // Đăng ký đồng bộ
     sync.subscribe(() => {
       const annotations = sync.get() as Annotation[];
       const currentPage = this.navigationController?.getCurrentPage() ?? 1;
@@ -342,7 +342,7 @@ class PdfPilot {
     });
   }
 
-  // Delegate navigation to controller
+  // Ủy quyền điều hướng cho bộ điều khiển
   public goToPage(pageNumber: number): Promise<void> {
     return this.navigationController?.goToPage(pageNumber) ?? Promise.resolve();
   }
@@ -359,11 +359,11 @@ class PdfPilot {
     this.navigationController?.rotateClockwise();
   }
 
-  // ... other delegating methods
+  // ... các phương thức ủy quyền khác
 }
 ```
 
-### 4.2 Page Rendering Flow
+### 4.2 Luồng kết xuất trang (Page Rendering Flow)
 
 ```
 loadDocument(url)
@@ -375,21 +375,21 @@ PDFDocumentProxy.getDocument(url)
 pageController.initialize(pdfDoc)
     │
     ▼
-For each page (or current page only):
+Cho từng trang (hoặc chỉ trang hiện tại):
     │
     ├── pdfDoc.getPage(n) → PDFPageProxy
     ├── page.getViewport({ scale: 1 }) → PageViewport
-    ├── Create page container div
-    ├── Create viewerCanvas + annotationCanvas
+    ├── Tạo div container cho trang
+    ├── Tạo viewerCanvas + annotationCanvas
     ├── page.render({ canvasContext, viewport })
     │
     ▼
 navigationController.setupEventListeners()
 ```
 
-### 4.3 Annotation Layer Per Page
+### 4.3 Lớp chú thích cho mỗi trang (Annotation Layer Per Page)
 
-Each `PageView` maintains its own annotation canvas:
+Mỗi `PageView` duy trì canvas chú thích riêng của nó:
 
 ```typescript
 class PageView {
@@ -405,7 +405,7 @@ class PageView {
     ctx.clearRect(0, 0, this.width, this.height);
     for (const ann of this.annotations) {
       if (ann.type === 'ink') {
-        // Use InkPlugin to render
+        // Sử dụng InkPlugin để kết xuất
       }
       // ...
     }
@@ -413,61 +413,61 @@ class PageView {
 }
 ```
 
-**Annotation-Page Association**: Annotations must store `pageNumber`:
+**Liên kết Chú thích-Trang (Annotation-Page Association)**: Các chú thích phải lưu trữ `pageNumber`:
 
 ```typescript
 interface Annotation {
   id: string;
   type: 'ink' | 'highlight' | 'text';
-  pageNumber: number;  // Required for multi-page
-  // ... other properties
+  pageNumber: number;  // Bắt buộc cho nhiều trang
+  // ... các thuộc tính khác
 }
 ```
 
 ---
 
-## 5. Implementation Roadmap
+## 5. Lộ trình Triển khai (Implementation Roadmap)
 
-### Phase 1: PageController (Core)
+### Giai đoạn 1: PageController (Cốt lõi)
 
-1. Create `PageController` class
-2. Implement `renderPage(n)` to create page canvases
-3. Store page views in `Map<number, PageView>`
-4. Support vertical scroll layout
+1. Tạo lớp `PageController`
+2. Triển khai `renderPage(n)` để tạo các canvas cho trang
+3. Lưu trữ các page view trong `Map<number, PageView>`
+4. Hỗ trợ bố cục cuộn dọc
 
-### Phase 2: NavigationController (User Interaction)
+### Giai đoạn 2: NavigationController (Tương tác Người dùng)
 
-1. Create `NavigationController` class
-2. Implement `goToPage()`, `nextPage()`, `prevPage()`
-3. Add keyboard shortcuts (Arrow keys, Page Up/Down)
-4. Add scroll-to-page on visible change
+1. Tạo lớp `NavigationController`
+2. Triển khai `goToPage()`, `nextPage()`, `prevPage()`
+3. Thêm các phím tắt bàn phím (Phím mũi tên, Page Up/Down)
+4. Thêm tính năng cuộn đến trang khi vùng hiển thị thay đổi
 
-### Phase 3: ZoomController (Scaling)
+### Giai đoạn 3: ZoomController (Tỉ lệ)
 
-1. Create `ZoomController` class
-2. Implement `zoomIn()`, `zoomOut()`, `setScale()`
-3. Implement `fitToWidth()`, `fitToPage()`
-4. Re-render all visible pages on scale change
+1. Tạo lớp `ZoomController`
+2. Triển khai `zoomIn()`, `zoomOut()`, `setScale()`
+3. Triển khai `fitToWidth()`, `fitToPage()`
+4. Kết xuất lại tất cả các trang đang hiển thị khi tỉ lệ thay đổi
 
-### Phase 4: RotateController (Rotation)
+### Giai đoạn 4: RotateController (Xoay)
 
-1. Create `RotateController` class
-2. Implement `rotateClockwise()`, `rotateCounterClockwise()`
-3. Update viewports with new rotation
+1. Tạo lớp `RotateController`
+2. Triển khai `rotateClockwise()`, `rotateCounterClockwise()`
+3. Cập nhật các viewport với góc xoay mới
 
-### Phase 5: Annotation Integration
+### Giai đoạn 5: Tích hợp Chú thích (Annotation Integration)
 
-1. Update `Annotation` interface to include `pageNumber`
-2. Modify `InkPlugin`/`HighlightPlugin` to be page-aware
-3. Render annotations only for visible pages
-4. Sync annotations per page
+1. Cập nhật interface `Annotation` để bao gồm `pageNumber`
+2. Sửa đổi `InkPlugin`/`HighlightPlugin` để nhận biết trang
+3. Chỉ kết xuất chú thích cho các trang đang hiển thị
+4. Đồng bộ hóa chú thích theo từng trang
 
 ---
 
-## 6. Reference: PDF.js Page Rendering
+## 6. Tham chiếu: Kết xuất Trang PDF.js (Reference: PDF.js Page Rendering)
 
 ```typescript
-// Complete page rendering pattern from PDF.js
+// Mẫu kết xuất trang hoàn chỉnh từ PDF.js
 async function renderPage(
   page: PDFPageProxy,
   canvas: HTMLCanvasElement,
@@ -496,7 +496,7 @@ async function renderPage(
 
 ---
 
-## 7. Events and Callbacks
+## 7. Sự kiện và Phản hồi (Events and Callbacks)
 
 ```typescript
 interface PdfPilotEvents {
@@ -507,9 +507,9 @@ interface PdfPilotEvents {
   'annotationremoved': (annotationId: string) => void;
 }
 
-// Usage
+// Cách sử dụng
 pdfPilot.on('pagechange', (pageNum) => {
-  console.log(`Navigated to page ${pageNum}`);
+  console.log(`Đã điều hướng tới trang ${pageNum}`);
   updatePageIndicator(pageNum);
 });
 ```

@@ -1,101 +1,101 @@
-# HighlightPlugin Upgrade Plan - PDF.js Text Highlighting Feature
+# Kế hoạch Nâng cấp HighlightPlugin - Tính năng Tô sáng Văn bản PDF (HighlightPlugin Upgrade Plan)
 
-## Current State Analysis
+## Phân tích Trạng thái Hiện tại (Current State Analysis)
 
-### HighlightPlugin.ts Limitations
-The current `HighlightPlugin.ts` is fundamentally a **drawing tool** rather than a **text highlighter**:
+### Các hạn chế của HighlightPlugin.ts (HighlightPlugin.ts Limitations)
+`HighlightPlugin.ts` hiện tại về cơ bản là một **công cụ vẽ** thay vì một **công cụ tô sáng văn bản**:
 
-1. **Rectangle-based approach**: Only creates simple rectangles based on mouse coordinates
-2. **No text awareness**: Cannot detect text boundaries, characters, or text flow
-3. **No text layer integration**: Works independently of PDF.js text layer
-4. **Simple outliner**: Creates basic rectangular regions without text geometry understanding
+1. **Cách tiếp cận dựa trên hình chữ nhật**: Chỉ tạo ra các hình chữ nhật đơn giản dựa trên tọa độ chuột
+2. **Không nhận biết văn bản**: Không thể phát hiện ranh giới văn bản, ký tự hoặc luồng văn bản
+3. **Không tích hợp lớp văn bản**: Hoạt động độc lập với lớp văn bản (text layer) của PDF.js
+4. **Bộ tạo đường bao đơn giản**: Tạo ra các vùng hình chữ nhật cơ bản mà không hiểu hình học văn bản
 
-### PDF.js Original Capabilities
-The original PDF.js highlight implementation provides:
+### Khả năng Gốc của PDF.js (PDF.js Original Capabilities)
+Triển khai tô sáng gốc của PDF.js cung cấp:
 
-1. **Text selection**: Detects actual text content and boundaries
-2. **Text layer integration**: Works with DOM text nodes and text layer elements
-3. **Character/word/line detection**: Understands text layout and flow
-4. **Precise outlining**: Creates polygonal paths following text geometry
-5. **Selection API usage**: Uses browser Selection API for text detection
+1. **Lựa chọn văn bản**: Phát hiện nội dung và ranh giới văn bản thực tế
+2. **Tích hợp lớp văn bản**: Hoạt động với các nút văn bản DOM và các phần tử lớp văn bản
+3. **Phát hiện ký tự/từ/dòng**: Hiểu bố cục và luồng văn bản
+4. **Tạo đường bao chính xác**: Tạo ra các đường dẫn đa giác theo hình học văn bản
+5. **Sử dụng Selection API**: Sử dụng Selection API của trình duyệt để phát hiện văn bản
 
-## Upgrade Architecture
+## Kiến trúc Nâng cấp (Upgrade Architecture)
 
-### Phase 1: Text Layer Integration
-**Objective**: Integrate with PDF.js text layer to access text content and layout
+### Giai đoạn 1: Tích hợp Lớp Văn bản (Text Layer Integration)
+**Mục tiêu**: Tích hợp với lớp văn bản của PDF.js để truy cập nội dung và bố cục văn bản
 
-#### Components to Implement:
+#### Các Thành phần cần Triển khai:
 1. **TextLayerService**
-   - Interface with PDF.js text layer
-   - Text node detection and mapping
-   - Coordinate transformation utilities
-   - Text boundary calculation
+   - Giao tiếp với lớp văn bản của PDF.js
+   - Phát hiện và ánh xạ các nút văn bản (text nodes)
+   - Các tiện ích chuyển đổi tọa độ
+   - Tính toán ranh giới văn bản
 
 2. **TextSelectionManager**
-   - Selection API integration
-   - Text range detection
-   - Multi-line text support
-   - Text flow analysis
+   - Tích hợp Selection API
+   - Phát hiện phạm vi văn bản (text range)
+   - Hỗ trợ văn bản nhiều dòng
+   - Phân tích luồng văn bản
 
-#### Key Files to Create/Modify:
+#### Các Tệp Chính cần Tạo/Sửa đổi:
 ```
 src/services/TextLayerService.ts
 src/services/TextSelectionManager.ts
 src/utils/TextCoordinateUtils.ts
 ```
 
-### Phase 2: Text-Aware Outliner
-**Objective**: Replace rectangle-based outliner with text-aware geometry engine
+### Giai đoạn 2: Bộ tạo Đường bao Nhận biết Văn bản (Text-Aware Outliner)
+**Mục tiêu**: Thay thế bộ tạo đường bao dựa trên hình chữ nhật bằng công cụ hình học nhận biết văn bản
 
-#### Components to Implement:
+#### Các Thành phần cần Triển khai:
 1. **TextHighlightOutliner**
-   - Text box processing algorithms
-   - Line break detection
-   - Character spacing analysis
-   - Polygonal path generation following text geometry
+   - Các thuật toán xử lý hộp văn bản
+   - Phát hiện ngắt dòng
+   - Phân tích khoảng cách ký tự
+   - Tạo đường dẫn đa giác theo hình học văn bản
 
 2. **TextBoxAnalyzer**
-   - Text box extraction from text layer
-   - Overlapping text detection
-   - Text flow direction analysis (LTR/RTL)
-   - Multi-column text support
+   - Trích xuất hộp văn bản từ lớp văn bản
+   - Phát hiện văn bản chồng lấp
+   - Phân tích hướng luồng văn bản (LTR/RTL)
+   - Hỗ trợ văn bản nhiều cột
 
-#### Key Files to Create/Modify:
+#### Các Tệp Chính cần Tạo/Sửa đổi:
 ```
 src/drawers/TextHighlightOutliner.ts
 src/analyzers/TextBoxAnalyzer.ts
 src/models/TextBox.ts
 ```
 
-### Phase 3: Enhanced HighlightPlugin
-**Objective**: Upgrade existing HighlightPlugin with text highlighting capabilities
+### Giai đoạn 3: HighlightPlugin Nâng cao (Enhanced HighlightPlugin)
+**Mục tiêu**: Nâng cấp HighlightPlugin hiện có với các khả năng tô sáng văn bản
 
-#### Core Changes:
-1. **Text Selection Mode**
-   - Add text selection mode alongside existing rectangle mode
-   - Toggle between free-form and text-aware highlighting
-   - Preserve backward compatibility
+#### Các Thay đổi Cốt lõi:
+1. **Chế độ Lựa chọn Văn bản (Text Selection Mode)**
+   - Thêm chế độ lựa chọn văn bản bên cạnh chế độ hình chữ nhật hiện có
+   - Chuyển đổi giữa tô sáng tự do và tô sáng nhận biết văn bản
+   - Duy trì khả năng tương thích ngược
 
-2. **Event Handling Enhancement**
-   - Text selection event handling
-   - Multi-line selection support
-   - Selection boundary detection
-   - Real-time text highlighting during selection
+2. **Tăng cường Xử lý Sự kiện (Event Handling Enhancement)**
+   - Xử lý sự kiện lựa chọn văn bản
+   - Hỗ trợ lựa chọn nhiều dòng
+   - Phát hiện ranh giới lựa chọn
+   - Tô sáng văn bản thời gian thực trong khi lựa chọn
 
-3. **Rendering Engine Upgrade**
-   - Text-aware highlight rendering
-   - Precise text boundary following
-   - Multi-fragment highlight support
-   - Performance optimization for large selections
+3. **Nâng cấp Công cụ Hiển thị (Rendering Engine Upgrade)**
+   - Hiển thị phần tô sáng nhận biết văn bản
+   - Theo sát ranh giới văn bản chính xác
+   - Hỗ trợ tô sáng nhiều phân đoạn
+   - Tối ưu hóa hiệu suất cho các lựa chọn lớn
 
-#### Modified File:
+#### Tệp Sửa đổi:
 ```
-src/plugins/HighlightPlugin.ts (major rewrite)
+src/plugins/HighlightPlugin.ts (viết lại phần lớn)
 ```
 
-## Technical Implementation Details
+## Chi tiết Triển khai Kỹ thuật (Technical Implementation Details)
 
-### Text Layer Integration Pattern
+### Mẫu Tích hợp Lớp Văn bản (Text Layer Integration Pattern)
 ```typescript
 interface TextLayerService {
   getTextNodesInRange(startX: number, startY: number, endX: number, endY: number): TextNode[];
@@ -106,162 +106,162 @@ interface TextLayerService {
 }
 ```
 
-### Text Selection Algorithm
+### Thuật toán Lựa chọn Văn bản (Text Selection Algorithm)
 ```typescript
 class TextSelectionManager {
   private selection: Selection | null = null;
   
   detectTextSelection(startPoint: Point, endPoint: Point): TextRange[] {
-    // Algorithm steps:
-    // 1. Get text nodes in selection area
-    // 2. Calculate text boundaries
-    // 3. Handle multi-line selections
-    // 4. Account for text flow direction
-    // 5. Return array of text ranges with precise coordinates
+    // Các bước thuật toán:
+    // 1. Lấy các nút văn bản trong vùng lựa chọn
+    // 2. Tính toán ranh giới văn bản
+    // 3. Xử lý lựa chọn nhiều dòng
+    // 4. Tính đến hướng luồng văn bản
+    // 5. Trả về mảng các phạm vi văn bản với tọa độ chính xác
   }
   
   getTextBoxesFromSelection(): TextBox[] {
-    // Convert selection to text boxes
-    // Handle partial character selection
-    // Merge overlapping boxes
-    // Sort by reading order
+    // Chuyển đổi lựa chọn thành các hộp văn bản
+    // Xử lý lựa chọn ký tự một phần
+    // Hợp nhất các hộp chồng lấp
+    // Sắp xếp theo thứ tự đọc
   }
 }
 ```
 
-### Text-Aware Outliner Algorithm
+### Thuật toán Bộ tạo Đường bao Nhận biết Văn bản (Text-Aware Outliner Algorithm)
 ```typescript
 class TextHighlightOutliner {
   createOutlinesFromTextBoxes(textBoxes: TextBox[]): HighlightOutline {
-    // Algorithm steps:
-    // 1. Sort text boxes by reading order
-    // 2. Detect line breaks and paragraph boundaries
-    // 3. Calculate precise polygon vertices
-    // 4. Handle text spacing and kerning
-    // 5. Generate SVG path following text geometry
-    // 6. Optimize path for rendering performance
+    // Các bước thuật toán:
+    // 1. Sắp xếp các hộp văn bản theo thứ tự đọc
+    // 2. Phát hiện ngắt dòng và ranh giới đoạn văn
+    // 3. Tính toán các đỉnh đa giác chính xác
+    // 4. Xử lý khoảng cách văn bản và kerning
+    // 5. Tạo đường dẫn SVG theo hình học văn bản
+    // 6. Tối ưu hóa đường dẫn cho hiệu suất hiển thị
   }
 }
 ```
 
-## Implementation Phases
+## Các Giai đoạn Triển khai (Implementation Phases)
 
-### Phase 1: Foundation (Week 1-2)
-- [ ] Create TextLayerService with basic text node detection
-- [ ] Implement coordinate transformation utilities
-- [ ] Add text boundary calculation methods
-- [ ] Create unit tests for text layer integration
+### Giai đoạn 1: Nền tảng (Foundation) (Tuần 1-2)
+- [ ] Tạo TextLayerService với khả năng phát hiện nút văn bản cơ bản
+- [ ] Triển khai các tiện ích chuyển đổi tọa độ
+- [ ] Thêm các phương thức tính toán ranh giới văn bản
+- [ ] Tạo các kiểm thử đơn vị cho tích hợp lớp văn bản
 
-### Phase 2: Selection Engine (Week 3-4)
-- [ ] Implement TextSelectionManager with Selection API
-- [ ] Add text range detection algorithms
-- [ ] Handle multi-line text selection
-- [ ] Integrate with text flow analysis
-- [ ] Create performance benchmarks
+### Giai đoạn 2: Công cụ Lựa chọn (Selection Engine) (Tuần 3-4)
+- [ ] Triển khai TextSelectionManager với Selection API
+- [ ] Thêm các thuật toán phát hiện phạm vi văn bản
+- [ ] Xử lý lựa chọn văn bản nhiều dòng
+- [ ] Tích hợp với phân tích luồng văn bản
+- [ ] Tạo các điểm chuẩn (benchmarks) hiệu suất
 
-### Phase 3: Outliner Upgrade (Week 5-6)
-- [ ] Develop TextHighlightOutliner algorithm
-- [ ] Implement text box analysis engine
-- [ ] Add polygon generation following text geometry
-- [ ] Handle edge cases (overlapping text, rotated text)
-- [ ] Optimize rendering performance
+### Giai đoạn 3: Nâng cấp Bộ tạo Đường bao (Outliner Upgrade) (Tuần 5-6)
+- [ ] Phát triển thuật toán TextHighlightOutliner
+- [ ] Triển khai công cụ phân tích hộp văn bản
+- [ ] Thêm tính năng tạo đa giác theo hình học văn bản
+- [ ] Xử lý các trường hợp biên (văn bản chồng lấp, văn bản bị xoay)
+- [ ] Tối ưu hóa hiệu suất hiển thị
 
-### Phase 4: Plugin Integration (Week 7-8)
-- [ ] Rewrite HighlightPlugin with text selection mode
-- [ ] Add toggle between rectangle and text modes
-- [ ] Implement real-time text highlighting
-- [ ] Add backward compatibility layer
-- [ ] Create comprehensive test suite
+### Giai đoạn 4: Tích hợp Plugin (Plugin Integration) (Tuần 7-8)
+- [ ] Viết lại HighlightPlugin với chế độ lựa chọn văn bản
+- [ ] Thêm nút chuyển đổi giữa chế độ hình chữ nhật và văn bản
+- [ ] Triển khai tô sáng văn bản thời gian thực
+- [ ] Thêm lớp tương thích ngược
+- [ ] Tạo bộ kiểm thử toàn diện
 
-### Phase 5: Polish & Optimization (Week 9-10)
-- [ ] Performance optimization for large documents
-- [ ] Add accessibility features
-- [ ] Implement undo/redo functionality
-- [ ] Add keyboard shortcuts for text selection
-- [ ] Final testing and bug fixes
+### Giai đoạn 5: Hoàn thiện & Tối ưu hóa (Polish & Optimization) (Tuần 9-10)
+- [ ] Tối ưu hóa hiệu suất cho các tài liệu lớn
+- [ ] Thêm các tính năng hỗ trợ tiếp cận (accessibility)
+- [ ] Triển khai chức năng hoàn tác/làm lại (undo/redo)
+- [ ] Thêm các phím tắt cho lựa chọn văn bản
+- [ ] Kiểm thử cuối cùng và sửa lỗi
 
-## Key Technical Challenges
+## Thách thức Kỹ thuật Chính (Key Technical Challenges)
 
-### 1. Text Coordinate Mapping
-**Challenge**: Accurately map between PDF coordinates, DOM coordinates, and canvas coordinates
-**Solution**: Implement robust coordinate transformation utilities with error correction
+### 1. Ánh xạ Tọa độ Văn bản (Text Coordinate Mapping)
+**Thách thức**: Ánh xạ chính xác giữa tọa độ PDF, tọa độ DOM và tọa độ canvas
+**Giải pháp**: Triển khai các tiện ích chuyển đổi tọa độ mạnh mẽ với khả năng sửa lỗi
 
-### 2. Multi-Line Selection
-**Challenge**: Handle selections that span multiple lines with varying line heights
-**Solution**: Develop line detection algorithms that account for different font sizes and spacing
+### 2. Lựa chọn Nhiều dòng (Multi-Line Selection)
+**Thách thức**: Xử lý các lựa chọn trải dài trên nhiều dòng với độ cao dòng khác nhau
+**Giải pháp**: Phát triển các thuật toán phát hiện dòng có tính đến các kích thước phông chữ và khoảng cách khác nhau
 
-### 3. Text Flow Direction
-**Challenge**: Support both LTR and RTL text flows
-**Solution**: Implement text direction detection and adjust selection algorithms accordingly
+### 3. Hướng Luồng Văn bản (Text Flow Direction)
+**Thách thức**: Hỗ trợ cả luồng văn bản LTR và RTL
+**Giải pháp**: Triển khai phát hiện hướng văn bản và điều chỉnh các thuật toán lựa chọn tương ứng
 
-### 4. Performance Optimization
-**Challenge**: Maintain smooth performance with large documents and complex selections
-**Solution**: Implement efficient text indexing and caching mechanisms
+### 4. Tối ưu hóa Hiệu suất (Performance Optimization)
+**Thách thức**: Duy trì hiệu suất mượt mà với các tài liệu lớn và các lựa chọn phức tạp
+**Giải pháp**: Triển khai các cơ chế lập chỉ mục và lưu trữ đệm (caching) văn bản hiệu quả
 
-### 5. Cross-Browser Compatibility
-**Challenge**: Handle variations in Selection API implementation across browsers
-**Solution**: Create browser-specific adapters and fallbacks
+### 5. Tương thích Đa trình duyệt (Cross-Browser Compatibility)
+**Thách thức**: Xử lý các biến thể trong việc triển khai Selection API trên các trình duyệt khác nhau
+**Giải pháp**: Tạo các bộ điều hợp (adapters) và phương án dự phòng (fallbacks) riêng cho từng trình duyệt
 
-## Testing Strategy
+## Chiến lược Kiểm thử (Testing Strategy)
 
-### Unit Tests
-- Text coordinate transformation accuracy
-- Text selection boundary detection
-- Outliner algorithm correctness
-- Performance benchmarks
+### Kiểm thử Đơn vị (Unit Tests)
+- Độ chính xác của chuyển đổi tọa độ văn bản
+- Phát hiện ranh giới lựa chọn văn bản
+- Tính đúng đắn của thuật toán bộ tạo đường bao
+- Các điểm chuẩn hiệu suất
 
-### Integration Tests
-- Text layer integration functionality
-- Multi-line selection scenarios
-- Cross-browser compatibility
-- Large document performance
+### Kiểm thử Tích hợp (Integration Tests)
+- Chức năng tích hợp lớp văn bản
+- Các kịch bản lựa chọn nhiều dòng
+- Khả năng tương thích đa trình duyệt
+- Hiệu suất trên tài liệu lớn
 
-### User Experience Tests
-- Text selection precision
-- Real-time highlighting responsiveness
-- Accessibility compliance
-- Mobile device compatibility
+### Kiểm thử Trải nghiệm Người dùng (User Experience Tests)
+- Độ chính xác của lựa chọn văn bản
+- Khả năng phản hồi của tính năng tô sáng thời gian thực
+- Tuân thủ các tiêu chuẩn hỗ trợ tiếp cận
+- Khả năng tương thích với thiết bị di động
 
-## Success Metrics
+## Chỉ số Thành công (Success Metrics)
 
-### Functional Metrics
-- [ ] Text selection accuracy: >95% precision in detecting text boundaries
-- [ ] Multi-line selection support: Handle 100% of multi-line scenarios
-- [ ] Performance: <100ms response time for text selection
-- [ ] Browser compatibility: Support 95%+ of modern browsers
+### Chỉ số Chức năng (Functional Metrics)
+- [ ] Độ chính xác lựa chọn văn bản: độ chính xác >95% trong việc phát hiện ranh giới văn bản
+- [ ] Hỗ trợ lựa chọn nhiều dòng: Xử lý 100% các kịch bản nhiều dòng
+- [ ] Hiệu suất: thời gian phản hồi <100ms cho việc lựa chọn văn bản
+- [ ] Tương thích trình duyệt: Hỗ trợ hơn 95% các trình duyệt hiện đại
 
-### User Experience Metrics
-- [ ] Selection precision: Users can select individual characters accurately
-- [ ] Visual feedback: Real-time highlighting during selection
-- [ ] Accessibility: Full keyboard navigation support
-- [ ] Mobile support: Touch-friendly text selection on mobile devices
+### Chỉ số Trải nghiệm Người dùng (User Experience Metrics)
+- [ ] Độ chính xác lựa chọn: Người dùng có thể chọn chính xác từng ký tự
+- [ ] Phản hồi trực quan: Tô sáng thời gian thực trong khi lựa chọn
+- [ ] Hỗ trợ tiếp cận: Hỗ trợ đầy đủ điều hướng bằng bàn phím
+- [ ] Hỗ trợ di động: Lựa chọn văn bản thân thiện với cảm ứng trên thiết bị di động
 
-## Migration Strategy
+## Chiến lược Di chuyển (Migration Strategy)
 
-### Backward Compatibility
-- Preserve existing rectangle-based functionality
-- Add toggle switch for text/rectangle modes
-- Maintain existing API compatibility
-- Provide migration guide for existing implementations
+### Khả năng Tương thích Ngược (Backward Compatibility)
+- Duy trì chức năng dựa trên hình chữ nhật hiện có
+- Thêm công tắc chuyển đổi cho các chế độ văn bản/hình chữ nhật
+- Duy trì khả năng tương thích API hiện có
+- Cung cấp hướng dẫn di chuyển cho các triển khai hiện tại
 
-### Rollout Plan
-1. **Alpha Release**: Internal testing with basic text selection
-2. **Beta Release**: Community testing with full feature set
-3. **Production Release**: Full rollout with performance optimizations
-4. **Legacy Deprecation**: Gradual phase-out of rectangle-only mode
+### Kế hoạch Triển khai (Rollout Plan)
+1. **Bản Alpha**: Kiểm thử nội bộ với lựa chọn văn bản cơ bản
+2. **Bản Beta**: Kiểm thử cộng đồng với đầy đủ các tính năng
+3. **Bản Production**: Triển khai đầy đủ với các tối ưu hóa hiệu suất
+4. **Ngừng hỗ trợ bản cũ**: Loại bỏ dần chế độ chỉ hình chữ nhật
 
-## Future Enhancements
+## Cải tiến Tương lai (Future Enhancements)
 
-### Advanced Features
-- **OCR Integration**: Highlight text in scanned documents
-- **Multi-Language Support**: Enhanced text analysis for complex scripts
-- **AI-Powered Selection**: Smart text boundary detection using ML
-- **Collaborative Highlighting**: Real-time shared highlighting
+### Các tính năng Nâng cao (Advanced Features)
+- **Tích hợp OCR**: Tô sáng văn bản trong các tài liệu đã quét
+- **Hỗ trợ Đa ngôn ngữ**: Tăng cường phân tích văn bản cho các hệ chữ phức tạp
+- **Lựa chọn do AI hỗ trợ**: Phát hiện ranh giới văn bản thông minh bằng ML
+- **Tô sáng Cộng tác**: Chia sẻ tô sáng thời gian thực
 
-### Performance Improvements
-- **Web Workers**: Offload text processing to background threads
-- **Incremental Rendering**: Progressive loading for large documents
-- **GPU Acceleration**: Hardware-accelerated highlight rendering
-- **Memory Optimization**: Efficient memory management for large selections
+### Cải thiện Hiệu suất (Performance Improvements)
+- **Web Workers**: Chuyển việc xử lý văn bản sang các luồng nền
+- **Kết xuất Tăng dần (Incremental Rendering)**: Tải dần cho các tài liệu lớn
+- **Tăng tốc GPU**: Hiển thị tô sáng được tăng tốc bằng phần cứng
+- **Tối ưu hóa Bộ nhớ**: Quản lý bộ nhớ hiệu quả cho các lựa chọn lớn
 
-This upgrade plan transforms the simple rectangle-based HighlightPlugin into a sophisticated text-aware highlighting system that matches PDF.js's native capabilities while maintaining performance and usability standards.
+Kế hoạch nâng cấp này chuyển đổi HighlightPlugin đơn giản dựa trên hình chữ nhật thành một hệ thống tô sáng nhận biết văn bản tinh vi, tương xứng với khả năng gốc của PDF.js trong khi vẫn duy trì các tiêu chuẩn về hiệu suất và khả năng sử dụng.

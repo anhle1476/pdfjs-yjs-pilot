@@ -1,6 +1,8 @@
 import { IToolPlugin, AnnotationObject, Rect } from './IToolPlugin';
 import { HighlightObject } from '../models/HighlightObject';
 import { HighlightOutliner, FreeHighlightOutliner } from '../drawers/HighlightOutliner';
+import { TextSelectionManager } from '../services/TextSelectionManager';
+import { TextLayerService } from '../services/TextLayerService';
 
 export class HighlightPlugin implements IToolPlugin {
   private _canvas: HTMLCanvasElement | null = null;
@@ -9,10 +11,11 @@ export class HighlightPlugin implements IToolPlugin {
   private _currentBoxes: Rect[] = [];
   private _outliner: HighlightOutliner | null = null;
   private _freeOutliner: FreeHighlightOutliner | null = null;
+  private _textSelectionManager: TextSelectionManager | null = null;
   public color: string = '#fff066';
-  public opacity: number = 1;
+  public opacity: number = 0.4;
   public thickness: number = 12;
-  public mode: 'free' | 'box' = 'free';
+  public mode: 'free' | 'box' | 'text' = 'text';
   public onRenderNeeded?: () => void;
   public onObjectCreated?: (obj: HighlightObject) => void;
   private _currentPageNumber: number = 1;
@@ -21,8 +24,14 @@ export class HighlightPlugin implements IToolPlugin {
     this._store = sharedStore;
   }
 
+  private _selectionListener: (() => void) | null = null;
+
   activate(canvas: HTMLCanvasElement, _context: CanvasRenderingContext2D): void {
     this._canvas = canvas;
+    const container = canvas.closest('.pdf-viewer-container') as HTMLElement || document.body;
+    const textLayerService = new TextLayerService(container);
+    this._textSelectionManager = new TextSelectionManager(textLayerService);
+    this._setupSelectionListener();
   }
 
   deactivate(): void {
@@ -31,6 +40,10 @@ export class HighlightPlugin implements IToolPlugin {
     this._outliner = null;
     this._freeOutliner = null;
     this._canvas = null;
+    if (this._selectionListener) {
+      document.removeEventListener('mouseup', this._selectionListener);
+      this._selectionListener = null;
+    }
   }
 
   setPageNumber(page: number): void {
@@ -62,6 +75,12 @@ export class HighlightPlugin implements IToolPlugin {
 
   onPointerDown(evt: PointerEvent): void {
     if (!this._canvas) return;
+
+    // With the new z-index strategy:
+    // 1. Clicks on text hit the text-layer spans (zIndex 10) and start selection.
+    // 2. Clicks on blank space pass through text-layer (pointer-events: none) and hit annotationCanvas (zIndex 5).
+    // 3. This method is only called for case #2.
+
     this._isDrawing = true;
     const point = this._getCanvasPoint(evt);
     const normalizedX = point.x / this._canvas.width;
@@ -70,6 +89,7 @@ export class HighlightPlugin implements IToolPlugin {
     if (this.mode === 'box') {
       this._currentBoxes = [{ x: normalizedX, y: normalizedY, width: 0, height: 0 }];
     } else {
+      // Use free outliner for 'free' mode or as fallback for 'text' mode when clicking blank areas
       this._freeOutliner = new FreeHighlightOutliner(
         { x: point.x, y: point.y },
         [0, 0, this._canvas.width, this._canvas.height],
@@ -79,6 +99,41 @@ export class HighlightPlugin implements IToolPlugin {
         0.001
       );
     }
+  }
+
+  private _setupSelectionListener(): void {
+    if (this._selectionListener) return;
+
+    this._selectionListener = () => {
+      if (this.mode === 'text' && this._textSelectionManager) {
+        const ranges = this._textSelectionManager.getSelection();
+        if (ranges.length > 0) {
+          for (const range of ranges) {
+            const obj = new HighlightObject(
+              `highlight_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              [],
+              this.color,
+              this.opacity,
+              {
+                x: range.startX,
+                y: range.startY,
+                width: range.endX - range.startX,
+                height: range.endY - range.startY
+              },
+              undefined,
+              '',
+              false
+            );
+            obj.pageNumber = range.pageNumber;
+            this._store.push(obj);
+            if (this.onObjectCreated) this.onObjectCreated(obj);
+          }
+          this._textSelectionManager.clearSelection();
+          if (this.onRenderNeeded) this.onRenderNeeded();
+        }
+      }
+    };
+    document.addEventListener('mouseup', this._selectionListener);
   }
 
   onPointerMove(evt: PointerEvent): void {

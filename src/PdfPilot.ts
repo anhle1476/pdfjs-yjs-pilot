@@ -219,6 +219,7 @@ export class PdfPilot {
     if (ctx) {
       this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
     }
+    this.highlightPlugin.mode = 'text'; // Default to text mode for highlighting
     this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
     this.highlightPlugin.onObjectCreated = (obj) => {
       sync.update((draft: unknown) => {

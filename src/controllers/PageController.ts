@@ -1,3 +1,4 @@
+import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
 import { ViewModeController, ViewMode } from './ViewModeController';
 
@@ -8,6 +9,7 @@ export interface PageView {
   container: HTMLElement;
   viewerCanvas: HTMLCanvasElement;
   annotationCanvas: HTMLCanvasElement;
+  textLayer: HTMLElement;
   scale: number;
   rotation: number;
 }
@@ -111,11 +113,21 @@ export class PageController {
     viewerCanvas.style.left = '0';
     viewerCanvas.style.zIndex = '1';
 
+    const textLayer = document.createElement('div');
+    textLayer.className = 'text-layer';
+    textLayer.style.position = 'absolute';
+    textLayer.style.top = '0';
+    textLayer.style.left = '0';
+    textLayer.style.zIndex = '2';
+    textLayer.style.opacity = '0.3'; // Reduced for debugging, normally 0 and visible via selection
+    textLayer.style.width = `${scaledViewport.width}px`;
+    textLayer.style.height = `${scaledViewport.height}px`;
+
     const annotationCanvas = document.createElement('canvas');
     annotationCanvas.style.position = 'absolute';
     annotationCanvas.style.top = '0';
     annotationCanvas.style.left = '0';
-    annotationCanvas.style.zIndex = '2';
+    annotationCanvas.style.zIndex = '3';
     annotationCanvas.style.cursor = 'crosshair';
 
     const dpr = window.devicePixelRatio || 1;
@@ -125,6 +137,7 @@ export class PageController {
     annotationCanvas.style.height = `${scaledViewport.height}px`;
 
     wrapper.appendChild(viewerCanvas);
+    wrapper.appendChild(textLayer);
     wrapper.appendChild(annotationCanvas);
 
     const pageView: PageView = {
@@ -134,6 +147,7 @@ export class PageController {
       container: wrapper,
       viewerCanvas,
       annotationCanvas,
+      textLayer,
       scale,
       rotation: this.rotation,
     };
@@ -144,7 +158,7 @@ export class PageController {
   }
 
   private async renderPageContent(pageView: PageView): Promise<void> {
-    const { pageProxy, viewerCanvas, viewport } = pageView;
+    const { pageProxy, viewerCanvas, textLayer, viewport } = pageView;
     const scale = window.devicePixelRatio || 1;
 
     viewerCanvas.width = viewport.width * scale;
@@ -159,11 +173,20 @@ export class PageController {
       const renderContext = {
         canvasContext: ctx,
         viewport: viewport,
-        canvas: viewerCanvas,
       };
 
       try {
         await pageProxy.render(renderContext).promise;
+
+        // Render Text Layer
+        const textContent = await pageProxy.getTextContent();
+        const textLayerInstance = new pdfjsLib.TextLayer({
+          textContentSource: textContent,
+          container: textLayer,
+          viewport: viewport
+        });
+        await textLayerInstance.render();
+
       } catch (e) {
         console.error(`Error rendering page ${pageView.pageNumber}:`, e);
       }

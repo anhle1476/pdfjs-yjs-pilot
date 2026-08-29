@@ -78,7 +78,7 @@ export class FreeTextObject extends AnnotationObject {
     };
   }
 
-  deserialize(data: FreeTextObjectData): void {
+  deserialize(data: any): void {
     this.id = data.id;
     this.content = data.content;
     this.fontSize = data.fontSize;

@@ -197,15 +197,15 @@ export class HighlightObject extends AnnotationObject {
 
   render(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
     ctx.save();
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.opacity;
 
     if (this.svgPath) {
       ctx.translate(this.bounds.x * canvasWidth, this.bounds.y * canvasHeight);
       ctx.scale(this.bounds.width * canvasWidth, this.bounds.height * canvasHeight);
       const path = new Path2D(this.svgPath);
-      ctx.fillStyle = this.color;
-      ctx.globalAlpha = this.opacity;
       ctx.fill(path);
-    } else {
+    } else if (this.paths.length > 0) {
       for (const { polygon } of this.paths) {
         if (polygon.length < 4) continue;
 
@@ -216,20 +216,19 @@ export class HighlightObject extends AnnotationObject {
         for (let i = 2; i < polygon.length; i += 2) {
           const x = polygon[i];
           const y = polygon[i + 1];
-          if (x === prevX) {
-            ctx.lineTo(x * canvasWidth, y * canvasHeight);
-          } else if (y === prevY) {
-            ctx.lineTo(x * canvasWidth, y * canvasHeight);
-          }
-          prevX = x;
-          prevY = y;
+          ctx.lineTo(x * canvasWidth, y * canvasHeight);
         }
         ctx.closePath();
+        ctx.fill();
       }
-
-      ctx.fillStyle = this.color;
-      ctx.globalAlpha = this.opacity;
-      ctx.fill();
+    } else {
+      // Fallback to bounds if no paths or svgPath
+      ctx.fillRect(
+        this.bounds.x * canvasWidth,
+        this.bounds.y * canvasHeight,
+        this.bounds.width * canvasWidth,
+        this.bounds.height * canvasHeight
+      );
     }
 
     ctx.restore();

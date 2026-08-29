@@ -1,19 +1,19 @@
-# PDF.js Pilot - Architecture Documentation
+# Tài liệu Kiến trúc PDF.js Pilot - Architecture Documentation
 
-## Overview
+## Tổng quan (Overview)
 
-This document describes the updated architecture of PDF.js Pilot, including the new plugin-based annotation system with `IToolPlugin` / `AnnotationObject`, real-time sync via Yjs, and how data flows through the application.
+Tài liệu này mô tả kiến trúc đã được cập nhật của PDF.js Pilot, bao gồm hệ thống chú thích (annotation) mới dựa trên plugin với `IToolPlugin` / `AnnotationObject`, đồng bộ hóa thời gian thực qua Yjs, và cách dữ liệu luân chuyển trong ứng dụng.
 
-## High-Level Architecture
+## Kiến trúc Cấp cao (High-Level Architecture)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                              Browser Tab                                     │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                        Application Layer                               │  │
+│  │                        Lớp Ứng dụng (Application Layer)                │  │
 │  │                                                                        │  │
 │  │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐      │  │
-│  │   │  Sidebar    │     │   Tools     │     │      PdfPilot       │      │  │
+│  │   │   Sidebar   │     │   Tools     │     │      PdfPilot       │      │  │
 │  │   │   (UI.ts)   │────▶│ (tools.ts)  │────▶│  (InkPlugin)        │      │  │
 │  │   └─────────────┘     └─────────────┘     └─────────────────────┘      │  │
 │  │          │                   │                       │                 │  │
@@ -35,7 +35,7 @@ This document describes the updated architecture of PDF.js Pilot, including the 
 │             │                   │             │                              │
 │             ▼                   ▼             ▼                              │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                       Sync Layer (sync.ts)                             │  │
+│  │                  Lớp Đồng bộ (Sync Layer - sync.ts)                    │  │
 │  │                                                                        │  │
 │  │   ┌─────────────────┐         ┌──────────────────┐                     │  │
 │  │   │    immer-yjs    │         │ WebsocketProvider│                     │  │
@@ -55,27 +55,27 @@ This document describes the updated architecture of PDF.js Pilot, including the 
                                       │ WebSocket
                                       ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                    y-websocket Server (port 1234)                             │
+│                    Máy chủ y-websocket (cổng 1234)                            │
 └───────────────────────────────────────────────────────────────────────────────┘
                                       │
-                                      │ Broadcast to all connected clients
+                                      │ Phát sóng tới tất cả các client đang kết nối
                                       ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                         Another Browser Tab                                  │
+│                         Tab Trình duyệt Khác                                 │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │   Same Architecture - Different Instance                               │  │
+│  │   Cùng một Kiến trúc - Một Instance Khác                               │  │
 │  │                                                                        │  │
-│  │   Y.Doc ◀──WebsocketProvider──▶ Annotations sync automatically         │  │
+│  │   Y.Doc ◀──WebsocketProvider──▶ Tự động đồng bộ chú thích              │  │
 │  │                                                                        │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Plugin System Architecture
+## Kiến trúc Hệ thống Plugin (Plugin System Architecture)
 
-### IToolPlugin Interface
+### Interface IToolPlugin
 
-All annotation tools implement the `IToolPlugin` interface, providing a unified lifecycle and event handling contract.
+Tất cả các công cụ chú thích đều triển khai interface `IToolPlugin`, cung cấp một vòng đời (lifecycle) và hợp đồng xử lý sự kiện thống nhất.
 
 ```typescript
 export interface IToolPlugin {
@@ -89,9 +89,9 @@ export interface IToolPlugin {
 }
 ```
 
-### AnnotationObject Base Class
+### Lớp Cơ sở AnnotationObject (AnnotationObject Base Class)
 
-`AnnotationObject` is the abstract base for all drawable annotation objects. It declares the contract for geometric manipulation and persistence.
+`AnnotationObject` là lớp trừu tượng cơ sở cho tất cả các đối tượng chú thích có thể vẽ. Nó khai báo hợp đồng cho các thao tác hình học và lưu trữ lâu dài (persistence).
 
 ```typescript
 export abstract class AnnotationObject {
@@ -105,47 +105,47 @@ export abstract class AnnotationObject {
 }
 ```
 
-### InkPlugin and InkObject
+### InkPlugin và InkObject
 
-`InkPlugin` implements `IToolPlugin` for the freehand ink drawing tool. It uses `InkDrawOutliner` from the drawers module to build SVG path data and produces `InkObject` instances.
+`InkPlugin` triển khai `IToolPlugin` cho công cụ vẽ mực tự do (freehand ink). Nó sử dụng `InkDrawOutliner` từ module drawers để xây dựng dữ liệu đường dẫn SVG và tạo ra các instance của `InkObject`.
 
-**InkObject** stores:
-- `id`: Unique identifier
-- `paths`: Array of `{ line: number[], points: number[] }` - normalized path data
-- `color`: Stroke color (hex)
-- `strokeWidth`: Stroke thickness
-- `bounds`: Bounding rectangle `{ x, y, width, height }`
+**InkObject** lưu trữ:
+- `id`: Định danh duy nhất
+- `paths`: Mảng các `{ line: number[], points: number[] }` - dữ liệu đường dẫn đã được chuẩn hóa (normalized)
+- `color`: Màu nét vẽ (hex)
+- `strokeWidth`: Độ dày nét vẽ
+- `bounds`: Hình chữ nhật bao quanh `{ x, y, width, height }`
 
 ```typescript
 export class InkObject extends AnnotationObject {
-  hitTest(x, y): boolean        // Point-in-path proximity check with margin
-  getBounds(): Rect             // Returns precomputed bounding box
-  move(dx, dy): void            // Translates all path points and bounds
-  resize(anchor, dx, dy): void  // Scales paths relative to anchor (n/s/e/w)
-  serialize(): any              // Returns JSON-serializable object (NaN → null)
-  deserialize(data): void        // Restores object from serialized data (null → NaN)
-  render(ctx, w, h): void      // Draws bezier curves to canvas using normalized coords
+  hitTest(x, y): boolean        // Kiểm tra khoảng cách điểm-trong-đường với lề
+  getBounds(): Rect             // Trả về hộp bao quanh đã tính toán trước
+  move(dx, dy): void            // Di chuyển tất cả các điểm đường dẫn và hộp bao
+  resize(anchor, dx, dy): void  // Thay đổi kích thước đường dẫn tương ứng với điểm neo (n/s/e/w)
+  serialize(): any              // Trả về đối tượng có thể JSON-serialize (NaN → null)
+  deserialize(data): void        // Khôi phục đối tượng từ dữ liệu đã serialize (null → NaN)
+  render(ctx, w, h): void      // Vẽ các đường cong bezier lên canvas bằng tọa độ đã chuẩn hóa
 }
 
 export class InkPlugin implements IToolPlugin {
-  // Holds the shared annotation store
+  // Giữ kho lưu trữ chú thích dùng chung (shared store)
   private store: AnnotationObject[];
 
-  // Pointer event handlers delegate to InkDrawOutliner
+  // Các hàm xử lý sự kiện con trỏ ủy quyền cho InkDrawOutliner
   onPointerDown(evt): void;
   onPointerMove(evt): void;
-  onPointerUp(evt): void;   // Pushes completed InkObject into sharedStore
+  onPointerUp(evt): void;   // Đẩy InkObject đã hoàn thành vào sharedStore
 
-  render(ctx): void;        // Clears canvas, renders all InkObjects + preview
+  render(ctx): void;        // Xóa canvas, vẽ tất cả InkObjects + bản xem trước (preview)
   getObjects(): AnnotationObject[];
 }
 ```
 
-**Key Design Decision**: Completed `InkObject` instances are pushed into a `sharedStore` (an `AnnotationObject[]`). This store is the single source of truth used for rendering and is the bridge to the sync layer.
+**Quyết định Thiết kế Quan trọng**: Các instance `InkObject` đã hoàn thành được đẩy vào một `sharedStore` (một mảng `AnnotationObject[]`). Kho lưu trữ này là nguồn chân lý duy nhất (single source of truth) được sử dụng để hiển thị và là cầu nối với lớp đồng bộ.
 
-## PdfPilot Integration
+## Tích hợp PdfPilot (PdfPilot Integration)
 
-`PdfPilot` owns the `annotationCanvas` and initializes `InkPlugin` with a shared store:
+`PdfPilot` sở hữu `annotationCanvas` và khởi tạo `InkPlugin` với một kho lưu trữ dùng chung:
 
 ```typescript
 private sharedStore: AnnotationObject[] = [];
@@ -157,16 +157,16 @@ constructor(container: HTMLElement, options: PdfPilotOptions = {}) {
 }
 
 private setupToolManager() {
-  // ToolManager handles non-ink tools (text, highlight)
-  // Ink tool is handled directly by InkPlugin via pointer events
+  // ToolManager xử lý các công cụ không phải mực (văn bản, tô sáng)
+  // Công cụ mực được xử lý trực tiếp bởi InkPlugin qua các sự kiện con trỏ
   this.annotationCanvas.addEventListener('pointerdown', (e) => {
     if (this.toolManager?.getTool() === 'ink') this.inkPlugin.onPointerDown(e);
   });
-  // ... similarly for pointermove / pointerup
+  // ... tương tự cho pointermove / pointerup
 }
 ```
 
-`renderAnnotations()` delegates entirely to the plugin:
+`renderAnnotations()` ủy quyền hoàn toàn cho plugin:
 
 ```typescript
 private renderAnnotations(): void {
@@ -178,58 +178,58 @@ private renderAnnotations(): void {
 }
 ```
 
-## Sync Layer
+## Lớp Đồng bộ (Sync Layer)
 
-The sync layer (`sync.ts`) binds the `sharedStore` to a Yjs `Y.Array` so that all annotation objects (via their `serialize()` output) are broadcast to peers.
+Lớp đồng bộ (`sync.ts`) liên kết `sharedStore` với một `Y.Array` của Yjs để tất cả các đối tượng chú thích (thông qua đầu ra `serialize()` của chúng) được phát sóng tới các máy ngang hàng (peers).
 
 ```typescript
 export const sync = {
-  subscribe: binder.subscribe,    // Listen for remote changes
-  update: binder.update,          // Apply local changes (immer-style)
-  get: () => binder.get(),        // Current annotation list
-  provider,                       // WebsocketProvider for real-time transport
+  subscribe: binder.subscribe,    // Lắng nghe các thay đổi từ xa
+  update: binder.update,          // Áp dụng các thay đổi cục bộ (kiểu immer)
+  get: () => binder.get(),        // Danh sách chú thích hiện tại
+  provider,                       // WebsocketProvider cho vận chuyển thời gian thực
 };
 ```
 
-When a new `InkObject` is pushed into `sharedStore` by `InkPlugin.onPointerUp()`, the sync layer distributes it to all peers. When a remote change arrives via WebSocket, `binder.update()` merges it back into `sharedStore`.
+Khi một `InkObject` mới được `InkPlugin.onPointerUp()` đẩy vào `sharedStore`, lớp đồng bộ sẽ phân phối nó tới tất cả các peers. Khi một thay đổi từ xa đến qua WebSocket, `binder.update()` sẽ hợp nhất nó quay lại `sharedStore`.
 
-## Data Flow: Ink Drawing
+## Luồng Dữ liệu: Vẽ Mực (Data Flow: Ink Drawing)
 
 ```
-User drags on canvas
+Người dùng kéo trên canvas
     │
     ▼
 InkPlugin.onPointerDown()
-    │ Creates InkDrawOutliner with normalized coords
+    │ Tạo InkDrawOutliner với tọa độ đã chuẩn hóa
     ▼
 InkPlugin.onPointerMove()
-    │ outliner.add() generates SVG path segment
-    │ previewPath updated → render() draws live preview
+    │ outliner.add() tạo ra đoạn đường dẫn SVG
+    │ previewPath được cập nhật → render() vẽ bản xem trước trực tiếp
     ▼
 InkPlugin.onPointerUp()
-    │ outliner.end() finalizes paths
-    │ new InkObject(id, paths, color, strokeWidth) created
-    │ sharedStore.push(inkObject)        ← stored for sync & render
+    │ outliner.end() hoàn tất các đường dẫn
+    │ new InkObject(id, paths, color, strokeWidth) được tạo ra
+    │ sharedStore.push(inkObject)        ← được lưu trữ để đồng bộ & hiển thị
     ▼
-render() called via onRenderNeeded
-    │ Iterates sharedStore
-    │ Calls obj.render(ctx, w, h) for each InkObject
-    │ Draws previewPath if active
+render() được gọi qua onRenderNeeded
+    │ Lặp qua sharedStore
+    │ Gọi obj.render(ctx, w, h) cho mỗi InkObject
+    │ Vẽ previewPath nếu đang hoạt động
     ▼
-Sync Layer
-    │ inkObject.serialize() → Yjs update → WebSocket broadcast
+Lớp Đồng bộ (Sync Layer)
+    │ inkObject.serialize() → Cập nhật Yjs → Phát sóng WebSocket
     ▼
-Other Peers
-    │ Receive Yjs update
-    │ sharedStore updated via sync.update()
-    │ render() redraws with new InkObject
+Các Máy ngang hàng Khác (Other Peers)
+    │ Nhận cập nhật Yjs
+    │ sharedStore được cập nhật qua sync.update()
+    │ render() vẽ lại với InkObject mới
 ```
 
-## Data Model
+## Mô hình Dữ liệu (Data Model)
 
-### AnnotationObject Serialization Format
+### Định dạng Tuần tự hóa AnnotationObject (AnnotationObject Serialization Format)
 
-InkObjects serialize to a JSON-compatible representation for the sync layer:
+InkObjects tuần tự hóa thành một biểu diễn tương thích JSON cho lớp đồng bộ:
 
 ```json
 {
@@ -247,9 +247,9 @@ InkObjects serialize to a JSON-compatible representation for the sync layer:
 }
 ```
 
-**Note**: `NaN` values in path `line` arrays are serialized as `null` (JSON does not support `NaN`). On `deserialize()`, `null` values are restored back to `NaN` to maintain the InkDrawOutliner contract.
+**Lưu ý**: Các giá trị `NaN` trong mảng `line` của đường dẫn được tuần tự hóa thành `null` (JSON không hỗ trợ `NaN`). Khi `deserialize()`, các giá trị `null` được khôi phục lại thành `NaN` để duy trì hợp đồng với InkDrawOutliner.
 
-### Rect Interface
+### Interface Rect
 
 ```typescript
 interface Rect {
@@ -260,70 +260,70 @@ interface Rect {
 }
 ```
 
-## File Structure
+## Cấu trúc Tệp (File Structure)
 
 ```
 pdfjs-pilot/
 ├── src/
-│   ├── main.ts                  # Entry point
-│   ├── PdfPilot.ts              # Main PDF viewer + annotation orchestration
-│   ├── tools.ts                 # ToolManager (text/highlight)
-│   ├── sync.ts                  # Yjs + immer-yjs + WebsocketProvider binding
-│   ├── ui.ts                    # Sidebar UI
-│   ├── types.ts                 # Shared TypeScript types (Annotation, InkData, etc.)
+│   ├── main.ts                  # Điểm vào (Entry point)
+│   ├── PdfPilot.ts              # Trình xem PDF chính + điều phối chú thích
+│   ├── tools.ts                 # ToolManager (văn bản/tô sáng)
+│   ├── sync.ts                  # Liên kết Yjs + immer-yjs + WebsocketProvider
+│   ├── ui.ts                    # UI Sidebar
+│   ├── types.ts                 # Các kiểu TypeScript dùng chung (Annotation, InkData, v.v.)
 │   ├── drawers/
-│   │   ├── InkDrawOutliner.ts   # Bezier path builder (InkDrawOutliner)
-│   │   └── Outline.ts          # Static utilities for normalization & bezier math
+│   │   ├── InkDrawOutliner.ts   # Bộ xây dựng đường dẫn Bezier (InkDrawOutliner)
+│   │   └── Outline.ts          # Các tiện ích tĩnh cho chuẩn hóa & toán học bezier
 │   └── plugins/
-│       ├── IToolPlugin.ts       # IToolPlugin interface + AnnotationObject base class
-│       ├── InkPlugin.ts        # InkPlugin + InkObject implementation
-│       └── HighlightPlugin.ts  # HighlightPlugin + HighlightObject implementation
+│       ├── IToolPlugin.ts       # Interface IToolPlugin + lớp cơ sở AnnotationObject
+│       ├── InkPlugin.ts        # Triển khai InkPlugin + InkObject
+│       └── HighlightPlugin.ts  # Triển khai HighlightPlugin + HighlightObject
 ├── tests/
-│   ├── InkPlugin.test.ts        # Unit tests for InkObject and InkPlugin
-│   └── HighlightPlugin.test.ts   # Unit tests for HighlightObject and HighlightPlugin
-├── vitest.config.ts             # Test configuration
-└── ARCHITECTURE.md              # This document
+│   ├── InkPlugin.test.ts        # Kiểm thử đơn vị cho InkObject và InkPlugin
+│   └── HighlightPlugin.test.ts   # Kiểm thử đơn vị cho HighlightObject và HighlightPlugin
+├── vitest.config.ts             # Cấu hình kiểm thử
+└── ARCHITECTURE.md              # Tài liệu này
 ```
 
-## Tool to Data Mapping
+## Ánh xạ Công cụ sang Dữ liệu (Tool to Data Mapping)
 
-### Ink (Draw) Tool
+### Công cụ Vẽ Mực (Ink / Draw Tool)
 
-**User Action**: Click and drag on annotation canvas
+**Hành động của Người dùng**: Nhấp và kéo trên canvas chú thích
 
 **Plugin**: `InkPlugin`
 
-**Data Created**: `InkObject` with:
-- `paths`: Bezier curve control points from `InkDrawOutliner` (normalized 0–1)
-- `strokeWidth`: Configurable thickness
-- `color`: Selected stroke color
+**Dữ liệu được Tạo**: `InkObject` với:
+- `paths`: Các điểm kiểm soát đường cong Bezier từ `InkDrawOutliner` (chuẩn hóa 0–1)
+- `strokeWidth`: Độ dày có thể cấu hình
+- `color`: Màu nét vẽ đã chọn
 
-**Sync**: `InkObject.serialize()` output is pushed into Yjs array
+**Đồng bộ**: Đầu ra `InkObject.serialize()` được đẩy vào mảng Yjs
 
-### Text Tool
+### Công cụ Văn bản (Text Tool)
 
-**Plugin**: Handled directly by `ToolManager` in `tools.ts`
+**Plugin**: Được xử lý trực tiếp bởi `ToolManager` trong `tools.ts`
 
-**Data Created**: `Annotation` with `type: 'text'`
+**Dữ liệu được Tạo**: `Annotation` với `type: 'text'`
 
-### Highlight Tool
+### Công cụ Tô sáng (Highlight Tool)
 
 **Plugin**: `HighlightPlugin`
 
-**Data Created**: `HighlightObject` with:
-- `paths`: Polygon outline data from `HighlightOutliner` (normalized 0–1)
-- `color`: Selected highlight color
-- `opacity`: Highlight transparency (0-1)
-- `quadPoints`: Optional PDF quad points for serialization
+**Dữ liệu được Tạo**: `HighlightObject` với:
+- `paths`: Dữ liệu đường bao đa giác từ `HighlightOutliner` (chuẩn hóa 0–1)
+- `color`: Màu tô sáng đã chọn
+- `opacity`: Độ trong suốt của phần tô sáng (0-1)
+- `quadPoints`: Các điểm tứ giác PDF tùy chọn để tuần tự hóa
 
-**Sync**: `HighlightObject.serialize()` output is pushed into Yjs array
+**Đồng bộ**: Đầu ra `HighlightObject.serialize()` được đẩy vào mảng Yjs
 
-**Key Differences from Ink**:
-- Highlight uses rectangular selection (drag to create) rather than freehand drawing
-- `HighlightOutliner` performs sweep-line algorithm to compute polygon union
-- `HighlightObject` renders with semi-transparent fill (not stroke)
+**Những khác biệt chính so với Ink**:
+- Tô sáng sử dụng lựa chọn hình chữ nhật (kéo để tạo) thay vì vẽ tự do
+- `HighlightOutliner` thực hiện thuật toán sweep-line để tính toán hợp (union) đa giác
+- `HighlightObject` hiển thị với màu tô bán trong suốt (không phải nét vẽ)
 
-## Sync Mechanism
+## Cơ chế Đồng bộ (Sync Mechanism)
 
 ### y-websocket Provider
 
@@ -333,71 +333,71 @@ import { WebsocketProvider } from 'y-websocket';
 const provider = new WebsocketProvider('ws://localhost:1234', 'pdfjs-pilot-annotations', doc);
 ```
 
-### How Sync Works
+### Cách thức Hoạt động của Đồng bộ
 
-1. Client connects to WebSocket server at `ws://localhost:1234`
-2. Server distributes document updates to all clients in the same room
-3. Room-based sharing: same room name = shared document state
+1. Client kết nối tới máy chủ WebSocket tại `ws://localhost:1234`
+2. Máy chủ phân phối các cập nhật tài liệu tới tất cả các client trong cùng một phòng (room)
+3. Chia sẻ dựa trên phòng: cùng tên phòng = cùng trạng thái tài liệu được chia sẻ
 
-### Sync Flow
+### Luồng Đồng bộ (Sync Flow)
 
 ```
-Tab A                                Server                         Tab B
+Tab A                                Máy chủ (Server)               Tab B
   │                                     │                               │
   │  InkPlugin.onPointerUp()            │                               │
   │  sharedStore.push(inkObject)        │                               │
   │                                     │                               │
   ▼                                     │                               │
-Y.Doc updated                           │                               │
+Cập nhật Y.Doc                          │                               │
   │                                     │                               │
   ├─────────────────────────────────────┼───────────────────────────────┤
   │                                     │                               │
   ▼                                     ▼                               ▼
-WebSocket send                     Server                    WebSocket receive
-to server                      (relay to room)                 from server
+WebSocket gửi                      Máy chủ                    WebSocket nhận
+tới máy chủ                     (chuyển tiếp tới phòng)         từ máy chủ
   │                                     │                               │
   └─────────────────────────────────────┼───────────────────────────────┘
                                         │
                                         ▼
-                              All clients in room
-                              receive the update
-                              sharedStore updated
-                              render() redraws
+                              Tất cả client trong phòng
+                              nhận được cập nhật
+                              sharedStore được cập nhật
+                              render() vẽ lại
 ```
 
-## Running the WebSocket Server
+## Chạy Máy chủ WebSocket (Running the WebSocket Server)
 
 ```bash
-# Start the server on port 1234
+# Bắt đầu máy chủ trên cổng 1234
 HOST=localhost PORT=1234 npx y-websocket
 ```
 
-## Dependencies
+## Phụ thuộc (Dependencies)
 
 ```json
 {
-  "yjs": "^13.6.21",         // CRDT implementation
-  "y-websocket": "^3.0.0",   // WebSocket sync provider
-  "immer-yjs": "^1.2.0",     // immer-style Yjs binding
-  "pdfjs-dist": "^5.5.207",  // PDF rendering
-  "vitest": "^4.1.1",        // Unit testing
-  "jsdom":                  // DOM environment for tests
+  "yjs": "^13.6.21",         // Triển khai CRDT
+  "y-websocket": "^3.0.0",   // Provider đồng bộ WebSocket
+  "immer-yjs": "^1.2.0",     // Liên kết Yjs kiểu immer
+  "pdfjs-dist": "^5.5.207",  // Kết xuất PDF
+  "vitest": "^4.1.1",        // Kiểm thử đơn vị
+  "jsdom":                  // Môi trường DOM cho kiểm thử
 }
 ```
 
-## Configuration
+## Cấu hình (Configuration)
 
-### Client-side (sync.ts)
+### Phía Client (sync.ts)
 
 ```typescript
 const ROOM_NAME = 'pdfjs-pilot-annotations';
 const WS_SERVER_URL = 'ws://localhost:1234';
 ```
 
-### Server-side (Environment Variables)
+### Phía Máy chủ (Biến Môi trường)
 
 ```bash
 HOST=localhost
 PORT=1234
-YPERSISTENCE=./dbDir  # Optional: Enable LevelDB persistence
+YPERSISTENCE=./dbDir  # Tùy chọn: Bật lưu trữ LevelDB lâu dài
 ```

@@ -1,36 +1,36 @@
-# FreeTextPlugin Migration Guide
+# Hướng dẫn Di chuyển FreeTextPlugin - FreeTextPlugin Migration Guide
 
-## Overview
+## Tổng quan (Overview)
 
-This document describes the migration from the legacy `FreeTextEditor` implementation in `display/editor/freetext.js` to the new `FreeTextPlugin` architecture in `src/plugins/FreeTextPlugin.ts`.
+Tài liệu này mô tả quá trình di chuyển từ triển khai `FreeTextEditor` cũ trong `display/editor/freetext.js` sang kiến trúc `FreeTextPlugin` mới trong `src/plugins/FreeTextPlugin.ts`.
 
-## Architecture Comparison
+## So sánh Kiến trúc (Architecture Comparison)
 
-### Legacy Architecture (freetext.js)
+### Kiến trúc Cũ (freetext.js)
 
 ```
 FreeTextEditor (AnnotationEditor subclass)
-├── Uses contentEditable div for text editing
-├── Integrated with AnnotationEditorLayer
-├── Uses static methods for defaults (initialize, updateDefaultParams)
-└── Complex keyboard event handling via KeyboardManager
+├── Sử dụng div contentEditable để chỉnh sửa văn bản
+├── Tích hợp với AnnotationEditorLayer
+├── Sử dụng các phương thức tĩnh cho các giá trị mặc định (initialize, updateDefaultParams)
+└── Xử lý sự kiện bàn phím phức tạp qua KeyboardManager
 ```
 
-### New Plugin Architecture (FreeTextPlugin)
+### Kiến trúc Plugin Mới (FreeTextPlugin)
 
 ```
-FreeTextPlugin (implements IToolPlugin)
-├── Uses DOM-based contentEditable for text input
-├── Integrates with PdfPilot via sharedStore
-├── Full IToolPlugin interface implementation
-└── Sync-ready via Yjs integration
+FreeTextPlugin (triển khai IToolPlugin)
+├── Sử dụng contentEditable dựa trên DOM để nhập văn bản
+├── Tích hợp với PdfPilot qua sharedStore
+├── Triển khai đầy đủ interface IToolPlugin
+└── Sẵn sàng đồng bộ qua tích hợp Yjs
 ```
 
-## Key Differences
+## Những Khác biệt Chính (Key Differences)
 
-### 1. Plugin Interface Compliance
+### 1. Tuân thủ Plugin Interface
 
-The new `FreeTextPlugin` implements the `IToolPlugin` interface:
+`FreeTextPlugin` mới triển khai interface `IToolPlugin`:
 
 ```typescript
 export interface IToolPlugin {
@@ -44,9 +44,9 @@ export interface IToolPlugin {
 }
 ```
 
-### 2. Data Model
+### 2. Mô hình Dữ liệu (Data Model)
 
-The `FreeTextObject` class provides serialization support:
+Lớp `FreeTextObject` cung cấp khả năng hỗ trợ tuần tự hóa (serialization):
 
 ```typescript
 export interface FreeTextObjectData {
@@ -60,24 +60,24 @@ export interface FreeTextObjectData {
 }
 ```
 
-### 3. DOM vs Canvas Rendering
+### 3. Hiển thị DOM so với Canvas (DOM vs Canvas Rendering)
 
-- **Legacy**: Renders directly via the editor's `render()` method returning a DOM div
-- **New**: Uses a separate `_editorContainer` overlay for DOM-based text editing while canvas is used for annotation layer
+- **Cũ**: Hiển thị trực tiếp qua phương thức `render()` của editor, trả về một div DOM
+- **Mới**: Sử dụng một lớp phủ `_editorContainer` riêng biệt để chỉnh sửa văn bản dựa trên DOM, trong khi canvas được sử dụng cho lớp chú thích
 
-## Migration Steps
+## Các Bước Di chuyển (Migration Steps)
 
-### Step 1: Import the Plugin
+### Bước 1: Nhập Plugin (Import the Plugin)
 
 ```typescript
 import { FreeTextPlugin } from './plugins/FreeTextPlugin';
 import { FreeTextObject } from './models/FreeTextObject';
 ```
 
-### Step 2: Initialize the Plugin
+### Bước 2: Khởi tạo Plugin (Initialize the Plugin)
 
 ```typescript
-// Add to sharedStore (same store used by InkPlugin and HighlightPlugin)
+// Thêm vào sharedStore (cùng kho lưu trữ được sử dụng bởi InkPlugin và HighlightPlugin)
 private sharedStore: AnnotationObject[] = [];
 private freeTextPlugin: FreeTextPlugin;
 
@@ -89,7 +89,7 @@ constructor(container: HTMLElement, options: PdfPilotOptions = {}) {
 }
 ```
 
-### Step 3: Activate on Current Page
+### Bước 3: Kích hoạt trên Trang Hiện tại (Activate on Current Page)
 
 ```typescript
 private setupAnnotationPlugins(): void {
@@ -110,7 +110,7 @@ private setupAnnotationPlugins(): void {
 }
 ```
 
-### Step 4: Add Event Listeners
+### Bước 4: Thêm các Trình lắng nghe Sự kiện (Add Event Listeners)
 
 ```typescript
 private setupAnnotationEventListeners(canvas: HTMLCanvasElement): void {
@@ -132,7 +132,7 @@ private setupAnnotationEventListeners(canvas: HTMLCanvasElement): void {
 }
 ```
 
-### Step 5: Handle Page Changes
+### Bước 5: Xử lý Thay đổi Trang (Handle Page Changes)
 
 ```typescript
 private setupAnnotationPluginsForCurrentPage(): void {
@@ -144,73 +144,73 @@ private setupAnnotationPluginsForCurrentPage(): void {
 }
 ```
 
-## API Reference
+## Tham chiếu API (API Reference)
 
-### FreeTextPlugin Methods
+### Các Phương thức của FreeTextPlugin (FreeTextPlugin Methods)
 
-| Method | Description |
-|--------|-------------|
-| `activate(canvas, context)` | Initialize the plugin with a canvas |
-| `deactivate()` | Clean up resources |
-| `setPageNumber(page)` | Switch to a different page |
-| `getPageNumber()` | Get current page number |
-| `onPointerDown(evt)` | Handle pointer down event |
-| `onPointerMove(evt)` | Handle pointer move event |
-| `onPointerUp(evt)` | Handle pointer up event |
-| `getObjects()` | Get annotations for current page |
-| `getAllObjects()` | Get all annotations |
-| `getData()` | Serialize all objects |
-| `setData(data)` | Restore objects from serialized data |
-| `validate()` | Validate all objects |
-| `initialize(container)` | Set up editor container |
-| `destroy()` | Clean up and deactivate |
-| `commitAll()` | Commit all active editors |
+| Phương thức | Mô tả |
+|-------------|-------|
+| `activate(canvas, context)` | Khởi tạo plugin với một canvas |
+| `deactivate()` | Dọn dẹp tài nguyên |
+| `setPageNumber(page)` | Chuyển sang một trang khác |
+| `getPageNumber()` | Lấy số trang hiện tại |
+| `onPointerDown(evt)` | Xử lý sự kiện nhấn con trỏ |
+| `onPointerMove(evt)` | Xử lý sự kiện di chuyển con trỏ |
+| `onPointerUp(evt)` | Xử lý sự kiện thả con trỏ |
+| `getObjects()` | Lấy các chú thích cho trang hiện tại |
+| `getAllObjects()` | Lấy tất cả các chú thích |
+| `getData()` | Tuần tự hóa tất cả các đối tượng |
+| `setData(data)` | Khôi phục các đối tượng từ dữ liệu đã tuần tự hóa |
+| `validate()` | Xác thực tất cả các đối tượng |
+| `initialize(container)` | Thiết lập container cho editor |
+| `destroy()` | Dọn dẹp và hủy kích hoạt |
+| `commitAll()` | Lưu (commit) tất cả các editor đang hoạt động |
 
-### FreeTextPlugin Options
+### Các Tùy chọn của FreeTextPlugin (FreeTextPlugin Options)
 
 ```typescript
 interface FreeTextPluginOptions {
-  defaultFontSize?: number;  // Default: 10
-  defaultColor?: string;     // Default: '#000000'
-  container?: HTMLElement;    // Optional custom container
+  defaultFontSize?: number;  // Mặc định: 10
+  defaultColor?: string;     // Mặc định: '#000000'
+  container?: HTMLElement;    // Container tùy chỉnh (tùy chọn)
 }
 ```
 
-### FreeTextPlugin Callbacks
+### Các Callback của FreeTextPlugin (FreeTextPlugin Callbacks)
 
 ```typescript
-onRenderNeeded?: () => void;          // Called when re-render is needed
-onObjectCreated?: (obj: FreeTextObject) => void;   // Called when object is created
-onObjectUpdated?: (obj: FreeTextObject) => void;   // Called when object is updated
-onObjectDeleted?: (obj: FreeTextObject) => void;   // Called when object is deleted
+onRenderNeeded?: () => void;          // Được gọi khi cần vẽ lại
+onObjectCreated?: (obj: FreeTextObject) => void;   // Được gọi khi đối tượng được tạo
+onObjectUpdated?: (obj: FreeTextObject) => void;   // Được gọi khi đối tượng được cập nhật
+onObjectDeleted?: (obj: FreeTextObject) => void;   // Được gọi khi đối tượng bị xóa
 ```
 
-### FreeTextObject Properties
+### Các Thuộc tính của FreeTextObject (FreeTextObject Properties)
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | `string` | Unique identifier |
-| `content` | `string` | Text content |
-| `fontSize` | `number` | Font size in pixels |
-| `color` | `string` | Text color (hex) |
-| `bounds` | `Rect` | Position and dimensions (normalized 0-1) |
-| `pageNumber` | `number` | Page index |
+| Thuộc tính | Kiểu | Mô tả |
+|------------|------|-------|
+| `id` | `string` | Định danh duy nhất |
+| `content` | `string` | Nội dung văn bản |
+| `fontSize` | `number` | Kích thước phông chữ tính bằng pixel |
+| `color` | `string` | Màu văn bản (hex) |
+| `bounds` | `Rect` | Vị trí và kích thước (chuẩn hóa 0-1) |
+| `pageNumber` | `number` | Chỉ số trang |
 
-### FreeTextObject Methods
+### Các Phương thức của FreeTextObject (FreeTextObject Methods)
 
-| Method | Description |
-|--------|-------------|
-| `hitTest(x, y)` | Check if point is within bounds |
-| `getBounds()` | Get bounds (copy) |
-| `move(dx, dy)` | Translate annotation |
-| `resize(anchor, dx, dy)` | Resize from anchor (n/s/e/w/nw/ne/se/sw) |
-| `serialize()` | Convert to JSON-serializable object |
-| `deserialize(data)` | Restore from serialized data |
-| `setContent(content)` | Set text content |
-| `getContent()` | Get text content |
-| `isEmpty()` | Check if content is empty/whitespace |
+| Phương thức | Mô tả |
+|-------------|-------|
+| `hitTest(x, y)` | Kiểm tra xem điểm có nằm trong phạm vi không |
+| `getBounds()` | Lấy phạm vi (bản sao) |
+| `move(dx, dy)` | Di chuyển chú thích |
+| `resize(anchor, dx, dy)` | Thay đổi kích thước từ điểm neo (n/s/e/w/nw/ne/se/sw) |
+| `serialize()` | Chuyển đổi thành đối tượng có thể JSON-serialize |
+| `deserialize(data)` | Khôi phục từ dữ liệu đã tuần tự hóa |
+| `setContent(content)` | Thiết lập nội dung văn bản |
+| `getContent()` | Lấy nội dung văn bản |
+| `isEmpty()` | Kiểm tra xem nội dung có trống hoặc chỉ có khoảng trắng không |
 
-## Serialization Format
+## Định dạng Tuần tự hóa (Serialization Format)
 
 ```json
 {
@@ -224,9 +224,9 @@ onObjectDeleted?: (obj: FreeTextObject) => void;   // Called when object is dele
 }
 ```
 
-## Integration with Sync Layer
+## Tích hợp với Lớp Đồng bộ (Integration with Sync Layer)
 
-The `FreeTextPlugin` integrates with the Yjs sync layer through the shared store:
+`FreeTextPlugin` tích hợp với lớp đồng bộ Yjs thông qua kho lưu trữ dùng chung:
 
 ```typescript
 this.freeTextPlugin.onObjectCreated = (obj) => {
@@ -236,7 +236,7 @@ this.freeTextPlugin.onObjectCreated = (obj) => {
 };
 ```
 
-When receiving remote updates:
+Khi nhận các cập nhật từ xa:
 
 ```typescript
 sync.subscribe((annotations) => {
@@ -245,44 +245,44 @@ sync.subscribe((annotations) => {
 });
 ```
 
-## Breaking Changes
+## Các Thay đổi Phá vỡ (Breaking Changes)
 
-1. **No direct DOM access**: The plugin manages its own editor container internally
-2. **Callback-based events**: Use `onObjectCreated`, `onObjectUpdated`, `onObjectDeleted` callbacks instead of events
-3. **Normalized coordinates**: Bounds are normalized (0-1) instead of pixel values
-4. **Page-based organization**: Objects are filtered by `pageNumber`
+1. **Không truy cập DOM trực tiếp**: Plugin tự quản lý container editor của nó bên trong
+2. **Sự kiện dựa trên Callback**: Sử dụng các callback `onObjectCreated`, `onObjectUpdated`, `onObjectDeleted` thay vì các sự kiện
+3. **Tọa độ đã chuẩn hóa**: Các phạm vi (bounds) được chuẩn hóa (0-1) thay vì giá trị pixel
+4. **Tổ chức theo trang**: Các đối tượng được lọc theo `pageNumber`
 
-## Testing
+## Kiểm thử (Testing)
 
-Run tests with:
+Chạy kiểm thử với:
 
 ```bash
 npx vitest run tests/FreeTextPlugin.test.ts
 ```
 
-Run with coverage:
+Chạy với báo cáo độ bao phủ (coverage):
 
 ```bash
 npx vitest run --coverage
 ```
 
-## File Structure
+## Cấu trúc Tệp (File Structure)
 
 ```
 src/
 ├── models/
-│   └── FreeTextObject.ts      # Data model
+│   └── FreeTextObject.ts      # Mô hình dữ liệu
 ├── plugins/
-│   └── FreeTextPlugin.ts      # Main plugin implementation
-└── types.ts                   # Updated with FreeTextData interface
+│   └── FreeTextPlugin.ts      # Triển khai plugin chính
+└── types.ts                   # Được cập nhật với interface FreeTextData
 ```
 
-## Comparison with Other Plugins
+## So sánh với các Plugin khác (Comparison with Other Plugins)
 
-| Feature | InkPlugin | HighlightPlugin | FreeTextPlugin |
-|---------|-----------|-----------------|----------------|
-| Drawing mode | Freehand | Box/Freehand | Click/drag |
-| Rendering | Canvas Path2D | Canvas fill | DOM overlay |
-| Preview | Yes | Yes | Yes (bounds only) |
-| Sync-ready | Yes | Yes | Yes |
-| Data format | paths[] | paths[] | content string |
+| Tính năng | InkPlugin | HighlightPlugin | FreeTextPlugin |
+|-----------|-----------|-----------------|----------------|
+| Chế độ vẽ | Vẽ tự do | Hộp/Vẽ tự do | Nhấp/Kéo |
+| Hiển thị | Canvas Path2D | Canvas fill | Lớp phủ DOM |
+| Xem trước | Có | Có | Có (chỉ khung bao) |
+| Sẵn sàng đồng bộ | Có | Có | Có |
+| Định dạng dữ liệu | paths[] | paths[] | content string |
