@@ -209,7 +209,7 @@ html, body {
   right: 0;
   bottom: 0;
   overflow: hidden;
-  opacity: 0.3; /* Low for debugging, should be 0 in production */
+  opacity: 1; /* Production: glyphs are transparent; only ::selection is visible */
   line-height: 1;
   text-rendering: optimizeLegibility;
   pointer-events: none; /* Crucial: passes events through to annotationCanvas */

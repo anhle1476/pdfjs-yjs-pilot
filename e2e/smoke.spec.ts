@@ -103,3 +103,130 @@ test('smoke: page loads, PDF renders, ink tool creates an annotation', async ({ 
     .poll(() => annotationCount(page), { timeout: 10_000 })
     .toBeGreaterThan(before);
 });
+
+// Helper: count annotations of a given type in the sync store.
+async function annotationCountOfType(page: Page, type: string): Promise<number> {
+  return page.evaluate((t) => {
+    const sync = (window as any).__pdfSync;
+    if (!sync) return -1;
+    const arr = sync.get();
+    if (!Array.isArray(arr)) return -1;
+    return arr.filter((a: any) => a && a.type === t).length;
+  }, type);
+}
+
+test('text-mode highlight: selecting text with the highlight tool persists a highlight', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
+
+  const pageView = page.locator('.page-view').first();
+  await expect(pageView).toBeVisible({ timeout: 45_000 });
+
+  // Wait for the text layer to render spans.
+  const firstSpan = pageView.locator('.text-layer span').first();
+  await expect(firstSpan).toBeVisible({ timeout: 30_000 });
+
+  // Activate the highlight tool and switch it to text mode.
+  await page.locator('.tool-btn[data-tool="highlight"]').click();
+  await page.locator('.hl-mode-btn[data-hl-mode="text"]').click();
+
+  const beforeHighlights = await annotationCountOfType(page, 'highlight');
+
+  // Select a run of text by dragging across the first few spans.
+  const spans = pageView.locator('.text-layer span');
+  const count = await spans.count();
+  const startBox = await spans.nth(0).boundingBox();
+  const endBox = await spans.nth(Math.min(3, count - 1)).boundingBox();
+  expect(startBox).not.toBeNull();
+  expect(endBox).not.toBeNull();
+
+  await page.mouse.move(startBox!.x + 2, startBox!.y + startBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    endBox!.x + endBox!.width - 2,
+    endBox!.y + endBox!.height / 2,
+    { steps: 6 }
+  );
+  await page.mouse.up();
+
+  // A highlight annotation should now be persisted.
+  await expect
+    .poll(() => annotationCountOfType(page, 'highlight'), { timeout: 10_000 })
+    .toBeGreaterThan(beforeHighlights);
+});
+
+test('multi-tool: ink, box highlight, and freetext all persist together', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
+
+  const pageView = page.locator('.page-view').first();
+  await expect(pageView).toBeVisible({ timeout: 45_000 });
+  const canvas = pageView.locator('canvas').last();
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  expect(box).not.toBeNull();
+
+  // 1. Ink stroke. The app defaults to the draw tool active on startup, so
+  // only click to activate if it is not already active (clicking an active
+  // tool toggles it off).
+  const drawBtn = page.locator('.tool-btn[data-tool="draw"]');
+  const drawActive = await drawBtn.evaluate((el) => el.classList.contains('active'));
+  if (!drawActive) {
+    await drawBtn.click();
+  }
+  await expect(drawBtn).toHaveClass(/active/);
+  {
+    const startX = box.x + box.width * 0.3;
+    const startY = box.y + box.height * 0.3;
+    const endX = box.x + box.width * 0.6;
+    const endY = box.y + box.height * 0.6;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    const steps = 8;
+    for (let i = 1; i <= steps; i++) {
+      await page.mouse.move(
+        startX + ((endX - startX) * i) / steps,
+        startY + ((endY - startY) * i) / steps
+      );
+    }
+    await page.mouse.up();
+  }
+
+  await expect
+    .poll(() => annotationCountOfType(page, 'ink'), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+
+  // 2. Box highlight (right blank margin, avoiding text spans).
+  await page.locator('.tool-btn[data-tool="highlight"]').click();
+  await page.locator('.hl-mode-btn[data-hl-mode="box"]').click();
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.96, box.y + box.height * 0.55, {
+    steps: 5,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(() => annotationCountOfType(page, 'highlight'), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+
+  // 3. FreeText (click at the proven-reachable region, then type & commit).
+  await page.locator('.tool-btn[data-tool="freetext"]').click();
+  await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  // Wait for the editor's contentEditable to appear, then type directly into it
+  // (focus is applied asynchronously by the tool, so target the element).
+  const editorContent = page.locator('.freetext-editor.editing .editor-content');
+  await expect(editorContent).toBeVisible({ timeout: 10_000 });
+  await editorContent.click();
+  await editorContent.type('hello e2e');
+  // Commit by pressing Escape (persists non-empty content).
+  await page.keyboard.press('Escape');
+
+  await expect
+    .poll(() => annotationCountOfType(page, 'freetext'), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+});

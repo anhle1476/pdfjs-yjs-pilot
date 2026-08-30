@@ -6,6 +6,9 @@ export interface SidebarOptions {
   onDraw: () => void;
   onText: () => void;
   onHighlight: () => void;
+  onSelect: () => void;
+  onDelete: () => void;
+  onHighlightModeChange: (mode: 'free' | 'box' | 'text') => void;
   onClear: () => void;
   onPrevPage: () => void;
   onNextPage: () => void;
@@ -17,6 +20,7 @@ export interface SidebarOptions {
   getPageInfo: () => { current: number; total: number };
   getZoomPercent: () => number;
   getViewMode: () => 'scroll' | 'single';
+  getHighlightMode: () => 'free' | 'box' | 'text';
 }
 
 let currentOptions: SidebarOptions | null = null;
@@ -177,6 +181,7 @@ export function createSidebar(options: SidebarOptions): void {
     { id: 'draw', label: '✏️ Draw', handler: options.onDraw },
     { id: 'freetext', label: '📝 Text', handler: options.onText },
     { id: 'highlight', label: '🖍️ Highlight', handler: options.onHighlight },
+    { id: 'select', label: '👆 Select', handler: options.onSelect },
   ];
 
   tools.forEach((tool) => {
@@ -190,6 +195,44 @@ export function createSidebar(options: SidebarOptions): void {
     toolsSection.appendChild(button);
   });
 
+  // Highlight mode selector (free / box / text).
+  const hlModeGroup = document.createElement('div');
+  hlModeGroup.className = 'btn-group';
+  hlModeGroup.style.marginTop = '8px';
+
+  const hlModes = [
+    { id: 'hl-free', label: 'Free', mode: 'free' as const },
+    { id: 'hl-box', label: 'Box', mode: 'box' as const },
+    { id: 'hl-text', label: 'Text', mode: 'text' as const },
+  ];
+
+  hlModes.forEach((m) => {
+    const button = document.createElement('button');
+    button.id = m.id;
+    button.textContent = m.label;
+    button.className = 'view-mode-btn hl-mode-btn';
+    button.dataset.hlMode = m.mode;
+    if (options.getHighlightMode() === m.mode) {
+      button.classList.add('active');
+    }
+    button.addEventListener('click', () => {
+      options.onHighlightModeChange(m.mode);
+      updateHighlightModeInfo(m.mode);
+    });
+    hlModeGroup.appendChild(button);
+  });
+  toolsSection.appendChild(hlModeGroup);
+
+  // Delete selected annotation.
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '❌ Delete Selected';
+  deleteBtn.className = 'tool-btn';
+  deleteBtn.id = 'delete-selected';
+  deleteBtn.addEventListener('click', () => {
+    options.onDelete();
+  });
+  toolsSection.appendChild(deleteBtn);
+
   const clearBtn = document.createElement('button');
   clearBtn.textContent = '🗑️ Clear All';
   clearBtn.className = 'tool-btn clear-btn';
@@ -199,6 +242,18 @@ export function createSidebar(options: SidebarOptions): void {
   toolsSection.appendChild(clearBtn);
 
   sidebar.appendChild(toolsSection);
+}
+
+export function updateHighlightModeInfo(mode: 'free' | 'box' | 'text'): void {
+  const buttons = document.querySelectorAll('.hl-mode-btn');
+  buttons.forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    if (button.dataset.hlMode === mode) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+  });
 }
 
 export function setActiveTool(tool: string | null): void {

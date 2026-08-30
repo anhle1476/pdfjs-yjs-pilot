@@ -113,22 +113,33 @@ export class PageController {
     viewerCanvas.style.left = '0';
     viewerCanvas.style.zIndex = '1';
 
+    // Annotation canvas sits above the base PDF canvas but BELOW the text layer,
+    // so that blank areas (where the text layer has pointer-events:none) route
+    // pointer events to this canvas for ink/highlight/freetext drawing, while
+    // text glyph spans (pointer-events:auto, z-index above) remain selectable.
+    const annotationCanvas = document.createElement('canvas');
+    annotationCanvas.style.position = 'absolute';
+    annotationCanvas.style.top = '0';
+    annotationCanvas.style.left = '0';
+    annotationCanvas.style.zIndex = '5';
+    annotationCanvas.style.cursor = 'crosshair';
+
+    // Text layer: production selection styling. The layer itself does not
+    // receive pointer events (blank space falls through to the annotation
+    // canvas); individual glyph spans opt back in via CSS (.text-layer span
+    // { pointer-events: auto }) so text remains selectable. Glyphs are
+    // transparent; only the ::selection highlight is visible.
     const textLayer = document.createElement('div');
     textLayer.className = 'text-layer';
     textLayer.style.position = 'absolute';
     textLayer.style.top = '0';
     textLayer.style.left = '0';
-    textLayer.style.zIndex = '2';
-    textLayer.style.opacity = '0.3'; // Reduced for debugging, normally 0 and visible via selection
+    textLayer.style.zIndex = '10';
+    textLayer.style.opacity = '1';
+    textLayer.style.lineHeight = '1';
+    textLayer.style.pointerEvents = 'none';
     textLayer.style.width = `${scaledViewport.width}px`;
     textLayer.style.height = `${scaledViewport.height}px`;
-
-    const annotationCanvas = document.createElement('canvas');
-    annotationCanvas.style.position = 'absolute';
-    annotationCanvas.style.top = '0';
-    annotationCanvas.style.left = '0';
-    annotationCanvas.style.zIndex = '3';
-    annotationCanvas.style.cursor = 'crosshair';
 
     const dpr = window.devicePixelRatio || 1;
     annotationCanvas.width = scaledViewport.width * dpr;
@@ -137,8 +148,8 @@ export class PageController {
     annotationCanvas.style.height = `${scaledViewport.height}px`;
 
     wrapper.appendChild(viewerCanvas);
-    wrapper.appendChild(textLayer);
     wrapper.appendChild(annotationCanvas);
+    wrapper.appendChild(textLayer);
 
     const pageView: PageView = {
       pageNumber,

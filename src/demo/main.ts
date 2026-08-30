@@ -40,6 +40,19 @@ async function main(): Promise<void> {
     onDraw: () => toggleTool('draw', 'ink'),
     onText: () => toggleTool('freetext', 'freetext'),
     onHighlight: () => toggleTool('highlight', 'highlight'),
+    onSelect: () => toggleTool('select', 'select'),
+    onDelete: () => {
+      app.deleteSelected();
+    },
+    onHighlightModeChange: (mode) => {
+      app.setHighlightMode(mode);
+      // Selecting a highlight mode implies activating the highlight tool.
+      if (currentActiveTool !== 'highlight') {
+        app.setTool('highlight');
+        setActiveTool('highlight');
+        currentActiveTool = 'highlight';
+      }
+    },
     onClear: () => {
       app.clearAnnotations();
     },
@@ -59,6 +72,26 @@ async function main(): Promise<void> {
     }),
     getZoomPercent: () => app.getZoomPercent(),
     getViewMode: () => app.getViewMode(),
+    getHighlightMode: () => app.getHighlightMode(),
+  });
+
+  // Keyboard: Delete/Backspace removes the selected annotation when the
+  // 'select' tool is active and focus is not inside an editable element.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.isContentEditable ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA')
+    ) {
+      return;
+    }
+    if (app.getTool() === 'select' && app.getSelectedId()) {
+      e.preventDefault();
+      app.deleteSelected();
+    }
   });
 
   const loadingText = document.getElementById('loading-text');

@@ -18,12 +18,16 @@ import {
   InkTool,
   HighlightTool,
   FreeTextTool,
+  HitTester,
+  TextLayerService,
+  TextSelectionManager,
   type PageView,
   type ViewMode,
+  type HighlightMode,
 } from '../lib';
 import { yAnnotations } from './sync';
 
-export type DemoTool = 'ink' | 'highlight' | 'freetext' | null;
+export type DemoTool = 'ink' | 'highlight' | 'freetext' | 'select' | null;
 
 export interface DemoAppOptions {
   onPageChange?: (pageNumber: number) => void;
@@ -47,6 +51,9 @@ export class DemoApp {
   public readonly inkTool: InkTool;
   public readonly highlightTool: HighlightTool;
   public readonly freeTextTool: FreeTextTool;
+  public readonly hitTester: HitTester;
+
+  private textSelectionManager: TextSelectionManager;
 
   private currentTool: DemoTool = null;
 
@@ -55,8 +62,16 @@ export class DemoApp {
   private previewPoints: { x: number; y: number }[] = [];
   private activePointerPage: number | null = null;
 
+  // Box-mode highlight drag state (normalized 0-1 within the page).
+  private boxStart: { x: number; y: number } | null = null;
+  private boxCurrent: { x: number; y: number } | null = null;
+
+  // Currently selected annotation id (via the 'select' tool / hit testing).
+  private selectedId: string | null = null;
+
   private bindings: CanvasBinding[] = [];
   private storeUnsub: (() => void) | null = null;
+  private onDocumentMouseUp: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: DemoAppOptions = {}) {
     this.options = options;
@@ -73,6 +88,14 @@ export class DemoApp {
       defaultFontSize: 12,
       defaultColor: '#000000',
     });
+
+    this.hitTester = new HitTester(this.renderer, this.store);
+    // The text-selection manager resolves the browser selection into
+    // normalized per-page ranges. Its TextLayerService is scoped to the
+    // renderer's container so span queries stay within this viewer.
+    this.textSelectionManager = new TextSelectionManager(
+      new TextLayerService(container)
+    );
   }
 
   public async loadDocument(url: string): Promise<void> {
@@ -93,6 +116,28 @@ export class DemoApp {
       this.renderAllPages();
       this.freeTextTool.setPageNumber(this.renderer.getCurrentPage());
     });
+
+    // Text-mode highlight: when the highlight tool is active AND in text mode,
+    // a completed text selection (mouseup) becomes one highlight per client
+    // rect. This mirrors the original HighlightPlugin's selection listener.
+    this.onDocumentMouseUp = () => {
+      if (this.currentTool !== 'highlight' || this.highlightTool.mode !== 'text') {
+        return;
+      }
+      const ranges = this.textSelectionManager.getSelection();
+      if (ranges.length === 0) return;
+      for (const range of ranges) {
+        this.highlightTool.createFromTextRange(range.pageNumber, {
+          startX: range.startX,
+          startY: range.startY,
+          endX: range.endX,
+          endY: range.endY,
+        });
+      }
+      this.textSelectionManager.clearSelection();
+      this.renderAllPages();
+    };
+    document.addEventListener('mouseup', this.onDocumentMouseUp);
 
     // React to navigation: rebind canvases (single-page mode swaps the DOM),
     // and move the freetext editor container to the new page.
@@ -145,6 +190,22 @@ export class DemoApp {
 
   public getTool(): DemoTool {
     return this.currentTool;
+  }
+
+  /**
+   * Switch the highlight tool's sub-mode: 'free' (drag paint), 'box' (drag a
+   * rectangle) or 'text' (highlight the current text selection).
+   */
+  public setHighlightMode(mode: HighlightMode): void {
+    this.highlightTool.setMode(mode);
+  }
+
+  public getHighlightMode(): HighlightMode {
+    return this.highlightTool.mode;
+  }
+
+  public getSelectedId(): string | null {
+    return this.selectedId;
   }
 
   private updateCanvasInteractivity(): void {
@@ -238,17 +299,33 @@ export class DemoApp {
         y
       );
     } else if (this.currentTool === 'highlight') {
+      // Text mode is handled by the document mouseup selection listener; do
+      // not start a drag stroke in that case.
+      if (this.highlightTool.mode === 'text') return;
+
       canvas.setPointerCapture?.(e.pointerId);
-      const { x, y } = this.toCanvasPixels(pageView, e);
-      this.previewPoints = [{ x, y }];
       this.activePointerPage = pageView.pageNumber;
-      this.highlightTool.beginFreeform(
-        pageView.pageNumber,
-        canvas.width,
-        canvas.height,
-        x,
-        y
-      );
+
+      if (this.highlightTool.mode === 'box') {
+        const norm = this.toNormalized(pageView, e);
+        this.boxStart = { x: norm.x, y: norm.y };
+        this.boxCurrent = { x: norm.x, y: norm.y };
+      } else {
+        const { x, y } = this.toCanvasPixels(pageView, e);
+        this.previewPoints = [{ x, y }];
+        this.highlightTool.beginFreeform(
+          pageView.pageNumber,
+          canvas.width,
+          canvas.height,
+          x,
+          y
+        );
+      }
+    } else if (this.currentTool === 'select') {
+      // Hit test the point; select the top-most annotation under it (if any).
+      const result = this.hitTester.hitTest(e.clientX, e.clientY);
+      this.selectedId = result?.hit?.id ?? null;
+      this.renderAllPages();
     } else if (this.currentTool === 'freetext') {
       // If the pointerdown landed on an existing editor DOM, ignore it — the
       // editor handles its own interaction. Otherwise spawn a new editor.
@@ -273,6 +350,12 @@ export class DemoApp {
         this.renderPreview(pageView);
       }
     } else if (this.currentTool === 'highlight') {
+      if (this.highlightTool.mode === 'box') {
+        const norm = this.toNormalized(pageView, e);
+        this.boxCurrent = { x: norm.x, y: norm.y };
+        this.renderBoxPreview(pageView);
+        return;
+      }
       const { x, y } = this.toCanvasPixels(pageView, e);
       const changed = this.highlightTool.extendFreeform(x, y);
       if (changed) {
@@ -294,6 +377,27 @@ export class DemoApp {
       this.activePointerPage = null;
       this.renderAnnotationsForPage(pageView.pageNumber);
     } else if (this.currentTool === 'highlight') {
+      if (this.highlightTool.mode === 'box') {
+        if (this.boxStart && this.boxCurrent) {
+          const x = Math.min(this.boxStart.x, this.boxCurrent.x);
+          const y = Math.min(this.boxStart.y, this.boxCurrent.y);
+          const width = Math.abs(this.boxCurrent.x - this.boxStart.x);
+          const height = Math.abs(this.boxCurrent.y - this.boxStart.y);
+          if (width > 0.001 && height > 0.001) {
+            this.highlightTool.createFromBoxes(
+              pageView.pageNumber,
+              [{ x, y, width, height }],
+              canvas.width,
+              canvas.height
+            );
+          }
+        }
+        this.boxStart = null;
+        this.boxCurrent = null;
+        this.activePointerPage = null;
+        this.renderAnnotationsForPage(pageView.pageNumber);
+        return;
+      }
       this.highlightTool.endFreeform();
       this.previewPoints = [];
       this.activePointerPage = null;
@@ -326,6 +430,56 @@ export class DemoApp {
         console.error('Error rendering annotation', obj.id, err);
       }
     }
+
+    // Draw a selection outline around the currently selected annotation.
+    if (this.selectedId) {
+      const selected = this.store
+        .getForPage(pageNumber)
+        .find((o) => o.id === this.selectedId);
+      if (selected) {
+        const b = selected.getBounds();
+        ctx.save();
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(b.x * w, b.y * h, b.width * w, b.height * h);
+        ctx.restore();
+      }
+    }
+  }
+
+  /**
+   * Draw a transient rectangle preview during a box-mode highlight drag.
+   */
+  private renderBoxPreview(pageView: PageView): void {
+    const ctx = pageView.annotationCanvas.getContext('2d');
+    if (!ctx || !this.boxStart || !this.boxCurrent) return;
+
+    this.renderAnnotationsForPage(pageView.pageNumber);
+
+    const w = pageView.annotationCanvas.width;
+    const h = pageView.annotationCanvas.height;
+    const x = Math.min(this.boxStart.x, this.boxCurrent.x) * w;
+    const y = Math.min(this.boxStart.y, this.boxCurrent.y) * h;
+    const width = Math.abs(this.boxCurrent.x - this.boxStart.x) * w;
+    const height = Math.abs(this.boxCurrent.y - this.boxStart.y) * h;
+
+    ctx.save();
+    ctx.fillStyle = this.highlightTool.color;
+    ctx.globalAlpha = this.highlightTool.opacity;
+    ctx.fillRect(x, y, width, height);
+    ctx.restore();
+  }
+
+  /**
+   * Delete the currently selected annotation (if any).
+   */
+  public deleteSelected(): boolean {
+    if (!this.selectedId) return false;
+    this.store.remove(this.selectedId);
+    this.selectedId = null;
+    this.renderAllPages();
+    return true;
   }
 
   private renderAllPages(): void {
@@ -446,6 +600,10 @@ export class DemoApp {
     this.unbindCanvases();
     this.storeUnsub?.();
     this.storeUnsub = null;
+    if (this.onDocumentMouseUp) {
+      document.removeEventListener('mouseup', this.onDocumentMouseUp);
+      this.onDocumentMouseUp = null;
+    }
     this.freeTextTool.deactivate();
     this.renderer.destroy();
   }

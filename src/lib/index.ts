@@ -16,6 +16,16 @@ export { AnnotationStore } from './AnnotationStore';
 export { HitTester, hitTest } from './HitTester';
 export type { HitTestResult } from './HitTester';
 
+// Text-layer / text-selection services (framework-free)
+export { TextLayerService } from './services/TextLayerService';
+export type { TextNodeInfo } from './services/TextLayerService';
+export { TextSelectionManager } from './services/TextSelectionManager';
+export type { SelectedTextRange } from './services/TextSelectionManager';
+
+// Coordinate utilities
+export { TextCoordinateUtils } from './utils/TextCoordinateUtils';
+export type { Point } from './utils/TextCoordinateUtils';
+
 // Tools
 export { InkTool } from './tools/InkTool';
 export type { InkToolOptions, InkToolState } from './tools/InkTool';
