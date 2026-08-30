@@ -26,6 +26,7 @@ import {
   type HighlightMode,
 } from '../lib';
 import { yAnnotations } from './sync';
+import { TouchGestureManager } from './TouchGestureManager';
 
 export type DemoTool = 'ink' | 'highlight' | 'freetext' | 'select' | null;
 
@@ -57,6 +58,7 @@ export class DemoApp {
   public readonly highlightTool: HighlightTool;
   public readonly freeTextTool: FreeTextTool;
   public readonly hitTester: HitTester;
+  private readonly touchGestureManager: TouchGestureManager;
 
   private textSelectionManager: TextSelectionManager;
 
@@ -66,6 +68,7 @@ export class DemoApp {
   // draw a transient preview (the committed geometry comes from the lib).
   private previewPoints: { x: number; y: number }[] = [];
   private activePointerPage: number | null = null;
+  private activePointerId: number | null = null;
 
   // Box-mode highlight drag state (normalized 0-1 within the page).
   private boxStart: { x: number; y: number } | null = null;
@@ -105,6 +108,11 @@ export class DemoApp {
     this.textSelectionManager = new TextSelectionManager(
       new TextLayerService(container)
     );
+    this.touchGestureManager = new TouchGestureManager(container, {
+      blocksSingleFingerPan: () => this.blocksSingleFingerPan(),
+      cancelActiveGesture: () => this.cancelActiveDrawingGesture(),
+    });
+    this.touchGestureManager.start();
   }
 
   public async loadDocument(url: string): Promise<void> {
@@ -238,6 +246,40 @@ export class DemoApp {
 
   public getHoveredId(): string | null {
     return this.hoveredId;
+  }
+
+  private blocksSingleFingerPan(): boolean {
+    return (
+      this.currentTool === 'ink' ||
+      this.currentTool === 'highlight' ||
+      this.currentTool === 'freetext'
+    );
+  }
+
+  private cancelActiveDrawingGesture(): void {
+    const pageNumber = this.activePointerPage;
+    if (pageNumber === null) return;
+
+    const pageView = this.renderer.getPageView(pageNumber);
+    if (pageView && this.activePointerId !== null) {
+      pageView.annotationCanvas.releasePointerCapture?.(this.activePointerId);
+    }
+
+    if (this.currentTool === 'ink') {
+      this.inkTool.cancelStroke();
+    } else if (this.currentTool === 'highlight') {
+      if (this.highlightTool.mode === 'box') {
+        this.boxStart = null;
+        this.boxCurrent = null;
+      } else {
+        this.highlightTool.cancelFreeform();
+      }
+    }
+
+    this.previewPoints = [];
+    this.activePointerPage = null;
+    this.activePointerId = null;
+    if (pageView) this.renderAnnotationsForPage(pageNumber);
   }
 
   /**
@@ -448,12 +490,13 @@ export class DemoApp {
     if (this.currentTool === 'ink') {
       // Prevent any residual text-selection gesture from starting and clear an
       // existing selection so the drag is treated purely as drawing input.
-      e.preventDefault();
+      if (e.pointerType !== 'touch') e.preventDefault();
       window.getSelection()?.removeAllRanges();
       canvas.setPointerCapture?.(e.pointerId);
       const { x, y } = this.toCanvasPixels(pageView, e);
       this.previewPoints = [{ x, y }];
       this.activePointerPage = pageView.pageNumber;
+      this.activePointerId = e.pointerId;
       this.inkTool.beginStroke(
         pageView.pageNumber,
         canvas.width,
@@ -467,10 +510,11 @@ export class DemoApp {
       if (this.highlightTool.mode === 'text') return;
 
       // Free/box highlight is a drawing gesture: suppress text selection.
-      e.preventDefault();
+      if (e.pointerType !== 'touch') e.preventDefault();
       window.getSelection()?.removeAllRanges();
       canvas.setPointerCapture?.(e.pointerId);
       this.activePointerPage = pageView.pageNumber;
+      this.activePointerId = e.pointerId;
 
       if (this.highlightTool.mode === 'box') {
         const norm = this.toNormalized(pageView, e);
@@ -541,6 +585,7 @@ export class DemoApp {
       this.inkTool.endStroke(x, y);
       this.previewPoints = [];
       this.activePointerPage = null;
+      this.activePointerId = null;
       this.renderAnnotationsForPage(pageView.pageNumber);
     } else if (this.currentTool === 'highlight') {
       if (this.highlightTool.mode === 'box') {
@@ -561,12 +606,14 @@ export class DemoApp {
         this.boxStart = null;
         this.boxCurrent = null;
         this.activePointerPage = null;
+        this.activePointerId = null;
         this.renderAnnotationsForPage(pageView.pageNumber);
         return;
       }
       this.highlightTool.endFreeform();
       this.previewPoints = [];
       this.activePointerPage = null;
+      this.activePointerId = null;
       this.renderAnnotationsForPage(pageView.pageNumber);
     }
   }
@@ -818,6 +865,7 @@ export class DemoApp {
   }
 
   public destroy(): void {
+    this.touchGestureManager.stop();
     this.unbindCanvases();
     this.storeUnsub?.();
     this.storeUnsub = null;

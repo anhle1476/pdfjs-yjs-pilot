@@ -214,6 +214,17 @@ export class HighlightTool {
     return created;
   }
 
+  /**
+   * Abort the current freeform stroke without persisting a highlight.
+   */
+  public cancelFreeform(): void {
+    if (!this.drawing) return;
+    this.drawing = false;
+    this.freeOutliner = null;
+    this.previewPath = null;
+    this.notify();
+  }
+
   public setColor(color: string): void {
     this.color = color;
     this.notify();
