@@ -418,6 +418,15 @@ export class PageController {
 
       // Build the text layer from the cached text content.
       textLayer.replaceChildren();
+      // Ensure the zoom variable is present on the element BEFORE pdf.js
+      // renders into it. pdf.js setLayerDimensions() writes style.width/height
+      // as `round(down, var(--total-scale-factor) * <px>, var(--scale-round-x/y))`
+      // which references this var; on a re-render into a torn-down element the
+      // var must already be set so the expression is valid immediately.
+      textLayer.style.setProperty(
+        '--total-scale-factor',
+        String(viewport.scale)
+      );
       const textContent = await this.getPageTextContent(pageView.pageNumber);
       const textLayerInstance = new pdfjsLib.TextLayer({
         textContentSource: textContent,
@@ -425,6 +434,15 @@ export class PageController {
         viewport,
       });
       await textLayerInstance.render();
+
+      // Defensive: ensure the text layer is never left with an internal scroll
+      // offset. Its glyph content overflows the box (scrollHeight > height); if
+      // any ancestor scroll / scrollIntoView had scrolled it (possible when the
+      // layer is a scroll container), the glyph spans would paint offset from
+      // the canvas. `overflow: clip` (see style.css) already prevents this, but
+      // resetting here keeps the invariant explicit and robust.
+      textLayer.scrollTop = 0;
+      textLayer.scrollLeft = 0;
 
       pageView.rendered = true;
       this.notifyPageRendered(pageView.pageNumber);

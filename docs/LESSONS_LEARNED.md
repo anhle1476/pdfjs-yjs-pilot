@@ -30,6 +30,37 @@ do CSS của bạn tính** qua `--total-scale-factor`. Thiếu → span về 16p
 
 ---
 
+## 1b. Text layer PHẢI dùng `overflow: clip`, KHÔNG `overflow: hidden`
+
+**Vấn đề (đã kiểm chứng)**: sau khi bấm "Next match" nhiều lần, một trang rời
+buffer virtualization → bị teardown → RE-RENDER; glyph của text layer (và search
+highlight bọc chúng) bị lệch **theo CHIỀU DỌC** so với canvas (ground truth) — cao
+hơn ~224px, **bền vững** (không tự sửa khi scroll/đổi view-mode).
+
+**Vì sao (đo bằng canvas làm chuẩn)**: glyph span dùng `top: <pct>%` (phần trăm
+theo chiều cao text layer). Nội dung glyph **tràn** khỏi hộp text layer
+(`scrollHeight` 1344 > `clientHeight` 792). Với `overflow: hidden`, text layer vẫn
+là **scroll container** cuộn được bằng lệnh. Khi `scrollSelectedIntoView()` /
+`scrollIntoView` chạy (hoặc trên đường re-render), trình duyệt cuộn **ancestor
+cuộn được gần nhất** của phần tử đích — chính là text layer — để lại
+`textLayer.scrollTop = 224`. Mọi glyph vì thế vẽ cao hơn 224px so với canvas.
+`offsetTop` (layout) vẫn đúng 77, nhưng `getBoundingClientRect` (đã cuộn) là -147
+→ lệch đúng 224px. `--scale-round-x/y` hay chiều cao inline KHÔNG phải nguyên
+nhân (đã loại trừ bằng đo `offsetHeight`/probe).
+
+**Cách sửa (tại nguồn, đúng như pdf.js upstream)**:
+- CSS `.text-layer { overflow: clip }` — `clip` cắt giống `hidden` nhưng **không
+  tạo scroll container**, nên không bao giờ bị cuộn lệch.
+- Thêm `--scale-round-x: 1px; --scale-round-y: 1px` vào `.text-layer` (khớp
+  `.pdfViewer .page` upstream) để biểu thức `round()` mà `setLayerDimensions()`
+  ghi vào `style.width/height` luôn hợp lệ.
+- Phòng thủ: sau `TextLayer.render()`, đặt `textLayer.scrollTop = 0;
+  textLayer.scrollLeft = 0` (giữ invariant tường minh).
+- Regression e2e: đo `.search-highlight` **so với `<canvas>`** (relX/relY), khẳng
+  định bằng nhau ở baseline và sau ~13 `findNext` (`e2e/search-highlight-canvas-align.spec.ts`).
+
+---
+
 ## 2. Đừng test text-selection bằng synthetic mouse drag
 
 **Vấn đề**: assertion "kéo chuột tổng hợp → `getSelection()` khác rỗng" flaky/false

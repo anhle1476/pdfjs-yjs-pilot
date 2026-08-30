@@ -215,7 +215,19 @@ html, body {
   top: 0;
   right: 0;
   bottom: 0;
-  overflow: hidden;
+  /* CRITICAL: use `clip`, NOT `hidden`. The glyph spans routinely overflow the
+     text layer's box (scrollHeight > clientHeight), and `overflow: hidden`
+     leaves the element a SCROLL CONTAINER that can be scrolled
+     programmatically. When a search match is scrolled into view (or on the
+     virtualization re-render path), the browser scrolls the nearest scrollable
+     ancestor of the target — which is this text layer — leaving it with a
+     non-zero scrollTop. Because the glyph spans are positioned inside that
+     scrolled content, every glyph then paints that many px too HIGH relative to
+     the canvas (the confirmed persistent ~224px vertical mis-position after
+     repeated findNext). `overflow: clip` clips identically but is NOT a scroll
+     container, so the layer can never be scrolled out of alignment. This
+     matches pdf.js upstream (web/pdf_viewer.css uses `overflow: clip`). */
+  overflow: clip;
   opacity: 1; /* Production: glyphs are transparent; only ::selection is visible */
   line-height: 1;
   text-rendering: optimizeLegibility;
@@ -225,6 +237,18 @@ html, body {
   /* pdf.js TextLayer helper variables. --total-scale-factor is set inline per
      page by PageController; --min-font-size is set inline by pdf.js itself. */
   --min-font-size: 1;
+  /* pdf.js setLayerDimensions() (called from TextLayer.render()) sets this
+     element's width/height to `round(down, var(--total-scale-factor) * Npx,
+     var(--scale-round-{x,y}))`. If --scale-round-x/y are undefined that round()
+     expression is invalid. Define them to 1px, exactly as pdf.js upstream does
+     (web/pdf_viewer.css), so the rounded dimension is always well-defined.
+     NOTE: this is upstream-alignment hardening only. It is NOT what fixed the
+     "highlights land on the wrong words after repeated Next" bug — that was the
+     `overflow: clip` change above (the text layer was a scroll container and
+     scrollIntoView was scrolling its glyphs ~224px out of place). Proven by
+     isolation: overflow:clip alone fixes the bug; --scale-round alone does not. */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
 }
