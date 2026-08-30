@@ -146,6 +146,16 @@ export class PageController {
     textLayer.style.pointerEvents = 'none';
     textLayer.style.width = `${scaledViewport.width}px`;
     textLayer.style.height = `${scaledViewport.height}px`;
+    // pdf.js TextLayer renders each glyph span with
+    // `font-size: calc(var(--total-scale-factor) * var(--font-height))` and
+    // `transform: scaleX(var(--scale-x))`, where --font-height/--scale-x are set
+    // inline per span at the PDF's *unscaled* (scale=1) units. The zoom is
+    // applied entirely through the --total-scale-factor CSS variable, which the
+    // host layer must provide. Without it the glyphs fall back to the browser
+    // default font-size (16px) and mismatch the canvas text — causing the HTML
+    // selection to drift from the underlying glyphs. This is the viewport zoom
+    // only (dpr is a canvas backing-store concern, not a CSS layout one).
+    textLayer.style.setProperty('--total-scale-factor', String(scaledViewport.scale));
 
     const dpr = window.devicePixelRatio || 1;
     annotationCanvas.width = scaledViewport.width * dpr;

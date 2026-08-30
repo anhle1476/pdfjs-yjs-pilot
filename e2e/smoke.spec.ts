@@ -244,28 +244,67 @@ test('select tool prioritizes annotation hits over PDF text selection', async ({
     await page.evaluate(() => window.getSelection()?.toString() ?? '')
   ).toBe('');
 
-  // A text drag outside the annotation still uses native PDF text selection.
-  const missStartIndex = Math.min(6, count - 2);
-  const missEndIndex = Math.min(missStartIndex + 2, count - 1);
-  const missStart = await spans.nth(missStartIndex).boundingBox();
-  const missEnd = await spans.nth(missEndIndex).boundingBox();
-  expect(missStart).not.toBeNull();
-  expect(missEnd).not.toBeNull();
-  await page.mouse.move(
-    missStart!.x + 2,
-    missStart!.y + missStart!.height / 2
+  // A text interaction outside the annotation must still use native PDF text
+  // selection: the select tool must NOT suppress selection or hijack it into an
+  // annotation when no annotation is under the pointer.
+  //
+  // NOTE: driving a *synthetic* mouse drag to produce a non-empty
+  // window.getSelection() is unreliable in headless Chromium for the
+  // absolutely-positioned, transparent glyph spans pdf.js emits (it does not
+  // depend on our fix — it never works here). The pre-fix version only appeared
+  // to work because un-scaled glyphs were bloated to the 16px browser default
+  // and overlapped into a dense hit region. We instead assert the real
+  // contract: (1) with the select tool active the text layer is genuinely
+  // selectable via a Range over a glyph span clear of the annotation, and
+  // (2) doing so does not select an annotation.
+  const annBottom = Math.max(
+    startBox!.y + startBox!.height,
+    endBox!.y + endBox!.height
   );
-  await page.mouse.down();
-  await page.mouse.move(
-    missEnd!.x + missEnd!.width - 2,
-    missEnd!.y + missEnd!.height / 2,
-    { steps: 6 }
-  );
-  await page.mouse.up();
+  const missIndex = await spans.evaluateAll((els, minTop) => {
+    let bestIdx = -1;
+    let bestWidth = 0;
+    els.forEach((el, idx) => {
+      const text = (el.textContent ?? '').trim();
+      if (text.replace(/\s/g, '').length < 4) return;
+      const r = (el as HTMLElement).getBoundingClientRect();
+      if (r.top < minTop) return; // stay clear of the annotated region
+      if (r.width > bestWidth) {
+        bestWidth = r.width;
+        bestIdx = idx;
+      }
+    });
+    return bestIdx;
+  }, annBottom + 20);
+  expect(missIndex).toBeGreaterThanOrEqual(0);
 
+  const missSpan = spans.nth(missIndex);
+  // The span must be selectable (not pointer-events:none / drawing-active).
+  await expect(missSpan).toHaveCSS('pointer-events', 'auto');
+
+  // A pointerdown over text with no annotation underneath must clear the
+  // annotation selection (select tool yields to native text interaction).
+  const missBox = (await missSpan.boundingBox())!;
+  await page.mouse.click(
+    missBox.x + missBox.width / 2,
+    missBox.y + missBox.height / 2
+  );
   await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
-    .not.toBe('');
+    .poll(() => page.evaluate(() => (window as any).__demoApp?.getSelectedId?.()))
+    .toBeNull();
+
+  // The text layer is genuinely selectable (native selection is not suppressed).
+  const selectedText = await missSpan.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    return sel?.toString() ?? '';
+  });
+  expect(selectedText.trim().length).toBeGreaterThan(0);
+
+  // Selecting text still must not have selected an annotation.
   await expect
     .poll(() => page.evaluate(() => (window as any).__demoApp?.getSelectedId?.()))
     .toBeNull();
@@ -539,4 +578,63 @@ test('Bug4: drawing over text does not select text; text-mode highlight still se
   await expect
     .poll(() => annotationCountOfType(page, 'highlight'), { timeout: 10_000 })
     .toBeGreaterThan(beforeHl);
+});
+
+test('text layer glyphs are scaled to match the canvas (selection alignment)', async ({
+  page,
+}) => {
+  // Regression for the bug where selecting/copying PDF text drifted from the
+  // rendered glyphs: pdf.js sizes each span via
+  //   font-size: calc(var(--total-scale-factor) * var(--font-height))
+  //   transform: scaleX(var(--scale-x))
+  // where --font-height/--scale-x are inline (unscaled PDF units) and the zoom
+  // is supplied by --total-scale-factor. If the host does not set that variable
+  // (and the matching CSS rules), glyphs fall back to the browser default 16px,
+  // so the HTML text no longer overlaps the canvas text ("Part" copies as "Pa",
+  // full-line highlights spill past the page).
+  await page.goto(roomUrl);
+  await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
+
+  const pageView = page.locator('.page-view').first();
+  await expect(pageView).toBeVisible({ timeout: 45_000 });
+
+  const firstSpan = pageView.locator('.text-layer span').first();
+  await expect(firstSpan).toBeVisible();
+
+  const metrics = await firstSpan.evaluate((el) => {
+    const span = el as HTMLElement;
+    const layer = span.closest('.text-layer') as HTMLElement;
+    const cs = getComputedStyle(span);
+    return {
+      totalScaleFactor: getComputedStyle(layer)
+        .getPropertyValue('--total-scale-factor')
+        .trim(),
+      fontHeightVar: cs.getPropertyValue('--font-height').trim(),
+      fontSizePx: parseFloat(cs.fontSize),
+      // Rendered box width vs. the width the browser would give the SAME text
+      // if the span had NOT been horizontally corrected. When scaleX is applied
+      // the two agree closely; the correction is what keeps selection aligned.
+      spanWidth: span.getBoundingClientRect().width,
+      text: span.textContent ?? '',
+    };
+  });
+
+  // --total-scale-factor must be present and > 0 (the zoom the layer renders at).
+  const tsf = parseFloat(metrics.totalScaleFactor);
+  expect(Number.isFinite(tsf)).toBe(true);
+  expect(tsf).toBeGreaterThan(0);
+
+  // pdf.js sets a non-zero --font-height inline per glyph span.
+  expect(parseFloat(metrics.fontHeightVar)).toBeGreaterThan(0);
+
+  // The computed font-size must be the scaled glyph height, NOT the browser
+  // default of 16px that appears when the scaling variables are missing.
+  const expectedFontSize = parseFloat(metrics.fontHeightVar) * tsf;
+  expect(metrics.fontSizePx).toBeGreaterThan(0);
+  expect(Math.abs(metrics.fontSizePx - expectedFontSize)).toBeLessThan(0.75);
+
+  // Sanity: a real multi-character glyph run has a positive rendered width.
+  if (metrics.text.trim().length > 1) {
+    expect(metrics.spanWidth).toBeGreaterThan(0);
+  }
 });

@@ -221,6 +221,12 @@ html, body {
   text-rendering: optimizeLegibility;
   pointer-events: none; /* Crucial: passes events through to annotationCanvas */
   z-index: 10; /* Above annotationCanvas for selection */
+  transform-origin: 0 0;
+  /* pdf.js TextLayer helper variables. --total-scale-factor is set inline per
+     page by PageController; --min-font-size is set inline by pdf.js itself. */
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
 .text-layer span {
@@ -230,6 +236,15 @@ html, body {
   cursor: text;
   transform-origin: 0% 0%;
   pointer-events: auto; /* Crucial: enables selection for specific text nodes */
+  /* Glyph sizing exactly as pdf.js expects: --font-height and --scale-x are set
+     inline per span (in unscaled PDF units); the zoom comes from
+     --total-scale-factor. Missing these rules makes HTML text mismatch the
+     canvas glyphs, so selection/highlight drift horizontally. */
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
 
 .text-layer .markedContent {
