@@ -1,5 +1,15 @@
 import { test, expect, Page } from '@playwright/test';
 
+// Each test gets its own y-websocket room so authoritative shared view state
+// (view mode, zoom, rotation, page — added by the view-sync feature) cannot
+// leak between otherwise-independent sessions that share the pilot server.
+let roomUrl = '/';
+test.beforeEach(() => {
+  roomUrl = `/?room=e2e-smoke-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+});
+
 /**
  * Smoke test for the PDF.js + Yjs pilot viewer.
  *
@@ -34,7 +44,7 @@ test('smoke: page loads, PDF renders, ink tool creates an annotation', async ({ 
     if (msg.type() === 'error') consoleErrors.push(msg.text());
   });
 
-  await page.goto('/');
+  await page.goto(roomUrl);
 
   // 1. Basic UI present.
   await expect(page.locator('#viewer-container')).toBeVisible();
@@ -118,7 +128,7 @@ async function annotationCountOfType(page: Page, type: string): Promise<number> 
 test('text-mode highlight: selecting text with the highlight tool persists a highlight', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();
@@ -160,7 +170,7 @@ test('text-mode highlight: selecting text with the highlight tool persists a hig
 test('select tool prioritizes annotation hits over PDF text selection', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();
@@ -264,7 +274,7 @@ test('select tool prioritizes annotation hits over PDF text selection', async ({
 test('multi-tool: ink, box highlight, and freetext all persist together', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();
@@ -343,7 +353,7 @@ test('multi-tool: ink, box highlight, and freetext all persist together', async 
 test('Bug1: box highlight commits on pointerup and paints visible pixels', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();
@@ -396,7 +406,7 @@ test('Bug1: box highlight commits on pointerup and paints visible pixels', async
 test('Bug2: freetext keeps focus while typing multiple characters', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();
@@ -422,7 +432,7 @@ test('Bug2: freetext keeps focus while typing multiple characters', async ({
 test('Bug3: single(page2) -> scroll renders one ordered 1..N sequence', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
   await expect(page.locator('.page-view').first()).toBeVisible({
     timeout: 45_000,
@@ -471,7 +481,7 @@ test('Bug3: single(page2) -> scroll renders one ordered 1..N sequence', async ({
 test('Bug4: drawing over text does not select text; text-mode highlight still selects', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto(roomUrl);
   await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
 
   const pageView = page.locator('.page-view').first();

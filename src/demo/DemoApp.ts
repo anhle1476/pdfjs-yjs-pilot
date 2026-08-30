@@ -33,6 +33,7 @@ export interface DemoAppOptions {
   onPageChange?: (pageNumber: number) => void;
   onZoomChange?: (scale: number) => void;
   onViewModeChange?: (mode: ViewMode) => void;
+  onRotationChange?: (rotation: number) => void;
 }
 
 interface CanvasBinding {
@@ -168,10 +169,11 @@ export class DemoApp {
       this.options.onZoomChange?.(scale);
     });
 
-    this.renderer.onRotationChange(() => {
+    this.renderer.onRotationChange((rotation) => {
       this.rebindCanvases();
       this.activateFreeTextForCurrentPage();
       this.renderAllPages();
+      this.options.onRotationChange?.(rotation);
     });
 
     this.renderer.onViewModeChange((mode) => {
@@ -771,6 +773,28 @@ export class DemoApp {
   public rotateClockwise(): void {
     this.renderer.rotateClockwise();
   }
+
+  /**
+   * Navigate to an absolute page. Used by remote view-state sync.
+   */
+  public goToPage(pageNumber: number): void {
+    this.renderer.goToPage(pageNumber);
+  }
+
+  /**
+   * Set an absolute zoom scale (not a percent). Used by remote view-state sync.
+   */
+  public setZoom(scale: number): void {
+    this.renderer.setZoom(scale);
+  }
+
+  /**
+   * Set an absolute rotation (degrees). Used by remote view-state sync so
+   * rotation applies absolutely rather than by replaying clockwise steps.
+   */
+  public setRotation(degrees: number): void {
+    this.renderer.setRotation(degrees);
+  }
   public async setViewMode(mode: ViewMode): Promise<void> {
     await this.renderer.setViewMode(mode);
   }
@@ -785,6 +809,12 @@ export class DemoApp {
   }
   public getZoomPercent(): number {
     return this.renderer.getZoomPercent();
+  }
+  public getZoom(): number {
+    return this.renderer.getZoom();
+  }
+  public getRotation(): number {
+    return this.renderer.getRotation();
   }
 
   public destroy(): void {

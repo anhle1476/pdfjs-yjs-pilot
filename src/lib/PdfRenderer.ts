@@ -143,6 +143,10 @@ export class PdfRenderer {
     this.navigationController?.rotateCounterClockwise();
   }
 
+  public setRotation(degrees: number): void {
+    this.navigationController?.setRotation(degrees);
+  }
+
   public getZoom(): number {
     return this.navigationController?.getZoom() ?? 1;
   }

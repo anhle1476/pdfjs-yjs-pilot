@@ -225,6 +225,16 @@ export class NavigationController {
     this.notifyRotationChange(newRotation);
   }
 
+  /**
+   * Set an absolute rotation (in degrees). Used by remote view-state sync so
+   * rotation is applied absolutely rather than by replaying clockwise steps.
+   */
+  public setRotation(degrees: number): void {
+    const newRotation = this.rotateCtrl.setRotation(degrees);
+    this.pageController.updateRotation(newRotation);
+    this.notifyRotationChange(newRotation);
+  }
+
   public getCurrentPage(): number {
     return this.pageController.getCurrentPage();
   }

@@ -12,6 +12,10 @@ export type { PdfRendererOptions, PageView, ViewMode } from './PdfRenderer';
 // Annotation persistence over a host-owned Y.Array
 export { AnnotationStore } from './AnnotationStore';
 
+// View-state replication over a host-owned Y.Map
+export { ViewStateStore, DEFAULT_VIEW_STATE } from './ViewStateStore';
+export type { ViewState, ViewModeState } from './ViewStateStore';
+
 // Hit testing
 export { HitTester, hitTest } from './HitTester';
 export type { HitTestResult } from './HitTester';

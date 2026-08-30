@@ -6,7 +6,9 @@ import {
   updateZoomInfo,
   updateViewModeInfo,
 } from './ui';
-import { provider } from './sync';
+import { provider, yViewState, clientId } from './sync';
+import { ViewStateStore } from '../lib';
+import { ViewSync } from './viewSync';
 
 async function main(): Promise<void> {
   const viewerContainer = document.getElementById('viewer-container');
@@ -14,11 +16,44 @@ async function main(): Promise<void> {
     throw new Error('Viewer container not found');
   }
 
+  // Shared view-state store + coordinator (view mode, zoom, rotation, page).
+  const viewStateStore = new ViewStateStore(yViewState);
+  // Forward-declared so the DemoApp change callbacks can reach it; assigned
+  // right after the app is constructed.
+  let viewSync: ViewSync;
+
+  // Defer applying remote view changes while the local user is actively typing
+  // in a freetext editor, so a remote rebuild doesn't tear down the editor DOM
+  // mid-keystroke. The deferred state is re-applied on the editor's blur.
+  const isEditingFreeText = (): boolean =>
+    document.querySelector('.freetext-editor.editing') !== null;
+
   // The demo app owns the renderer, store, tools and all input wiring.
   const app = new DemoApp(viewerContainer, {
-    onPageChange: () => updatePageInfo(),
-    onZoomChange: () => updateZoomInfo(),
-    onViewModeChange: () => updateViewModeInfo(),
+    onPageChange: () => {
+      updatePageInfo();
+      viewSync?.handleLocalPageChange(app.getCurrentPage());
+    },
+    onZoomChange: () => {
+      updateZoomInfo();
+      viewSync?.handleLocalZoomChange(app.getZoom());
+    },
+    onViewModeChange: () => {
+      updateViewModeInfo();
+      viewSync?.handleLocalViewModeChange(app.getViewMode());
+    },
+    onRotationChange: () => {
+      viewSync?.handleLocalRotationChange(app.getRotation());
+    },
+  });
+
+  viewSync = new ViewSync(app, viewStateStore, clientId, {
+    onAfterApply: () => {
+      updatePageInfo();
+      updateZoomInfo();
+      updateViewModeInfo();
+    },
+    shouldDeferApply: isEditingFreeText,
   });
 
   let currentActiveTool: string | null = null;
@@ -109,6 +144,12 @@ async function main(): Promise<void> {
     updatePageInfo();
     updateZoomInfo();
     updateViewModeInfo();
+
+    // Begin relaying view state and adopt the room's current view (or seed it
+    // if we are the first peer). Do this after the document is loaded so the
+    // absolute setters operate on a fully-rendered viewer.
+    viewSync.start();
+    viewSync.syncInitial();
   } catch (error: any) {
     console.error('Error loading PDF in main:', error);
     if (loadingText) {
@@ -130,6 +171,14 @@ async function main(): Promise<void> {
   // window.__pdfSync.get() and expects an array of annotation records.
   (window as any).__pdfSync = {
     get: () => app.store.getYArray().toArray(),
+  };
+
+  // Test hook: read/write the shared view state directly. `get` returns the
+  // defaulted shared state; `set` writes as a *remote* origin so the local
+  // apply path (and its loop guards) run exactly as they would for a peer.
+  (window as any).__pdfViewState = {
+    get: () => viewStateStore.getState(),
+    set: (partial: any) => viewStateStore.setState(partial, 'e2e-remote'),
   };
 }
 
