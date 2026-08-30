@@ -22,17 +22,18 @@ Nguyên tắc cốt lõi: **thư viện thuần API, host sở hữu I/O**. `src
 │  │  ui.ts          sidebar / info panel                                      ││
 │  │  DemoApp.ts     orchestrator: gắn pointer listener, chọn tool, render     ││
 │  │  TouchGestureManager.ts   chặn pan 1 ngón khi đang vẽ                     ││
-│  │  viewSync.ts    đồng bộ view state 2 chiều (chống echo)                   ││
-│  │  sync.ts        SỞ HỮU Y.Doc + WebsocketProvider + Y.Array/Y.Map          ││
+│  │  viewSync.ts    đồng bộ view state 2 chiều qua Awareness (chống echo)     ││
+│  │  sync.ts        SỞ HỮU Y.Doc + WebsocketProvider + Y.Array + Awareness     ││
 │  └───────────────┬───────────────────────────────────┬─────────────────────┘│
-│                  │ dùng                                │ trao Y.Array / Y.Map │
+│                  │ dùng                                │ trao Y.Array/Awareness│
 │                  ▼                                     ▼                       │
 │  Lib (src/lib) — thuần API, framework-free                                    │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │  PdfRenderer            render/view + navigation (KHÔNG annotation)       ││
 │  │   └ controllers/        Page / Navigation / Zoom / Rotate / ViewMode      ││
 │  │  AnnotationStore        CRUD trên Y.Array (host cấp)                       ││
-│  │  ViewStateStore         view state trên Y.Map (host cấp)                   ││
+│  │  ViewStateAwareness     view state trên Yjs Awareness (host cấp) — KHÔNG   ││
+│  │                          ghi vào Y.Doc (presence, phù du)                  ││
 │  │  HitTester              hit-test annotation                               ││
 │  │  tools/                 InkTool / HighlightTool / FreeTextTool            ││
 │  │  models/                InkObject / HighlightObject / FreeTextObject      ││
@@ -76,11 +77,31 @@ Lớp CRUD mỏng trên một `Y.Array` **do host cấp**. Mỗi phần tử là
 `serialize()` (khoá bằng `type`: `'ink' | 'highlight' | 'freetext'`). Mọi mutation
 bọc trong `doc.transact(...)`. `subscribe()` dùng `Y.Array.observe`.
 
-### ViewStateStore (`ViewStateStore.ts`)
-Lớp mỏng trên một `Y.Map` **do host cấp**, chứa `{ viewMode, zoom, rotation, page }`.
-`setState(partial, origin)` chỉ ghi khoá **đã đổi** (idempotent, chống dao động
-float) và truyền `origin` xuống `doc.transact` để observer bỏ qua write của chính
-mình. `subscribe` trả cả state (đã defaulted) lẫn `origin`.
+### ViewStateAwareness (`ViewStateAwareness.ts`)
+Lớp mỏng trên một **Yjs Awareness** (presence phù du) **do host cấp**, chứa
+`{ viewMode, zoom, rotation, page }` dưới **một** trường awareness `view`.
+
+**TẠI SAO Awareness thay vì Y.Doc**: view state đổi trên các hành động **tần suất
+cao** — scroll, zoom, rotate, lật trang. Ghi những giá trị đó vào `Y.Doc` (CRDT có
+lịch sử vĩnh viễn, chỉ append) khiến document **phình vô hạn** dù chỉ giá trị *mới
+nhất* mới có ý nghĩa. Awareness là state **phù du**: **không** ghi vào lịch sử doc,
+và tự **xoá** khi peer ngắt kết nối — đúng chỗ cho "peer này đang xem ở đâu".
+Annotation vẫn nằm trong `Y.Doc` (Y.Array) vì đó là dữ liệu bền, cần lịch sử.
+
+Bề mặt khớp với những gì `ViewSync` cần nên coordinator gần như không đổi:
+- `getState()` — view state **local** đã publish (defaulted).
+- `setState(partial, origin?)` — merge + publish vào trường `view` của awareness
+  local, giữ nguyên các trường awareness khác. `origin` chỉ để tương thích chữ ký;
+  self-filter làm bằng `clientID` (không phải origin) vì awareness không có lịch sử.
+- `subscribe(cb)` — nghe `change`; khi một **peer remote** đổi trường `view`, gọi
+  `cb` với view của peer đó và một origin **không phải** local (để `ViewSync` áp).
+  Bỏ qua thay đổi của chính `clientID` mình.
+- `isEmpty()` / `getRemoteState()` — có/không peer remote nào đang publish view;
+  chọn **peer có `clientID` nhỏ nhất** (deterministic) để adopt-on-join.
+
+Phụ thuộc trên một interface cấu trúc tối thiểu (`AwarenessLike`) nên unit-test
+được mà không cần y-websocket. `ViewSync` phụ thuộc `ViewStateSource` (không phải
+class cụ thể).
 
 ### Tools (`tools/`)
 `InkTool`, `HighlightTool` (mode `free|box|text`), `FreeTextTool`. Tools nhận
@@ -118,9 +139,11 @@ liệu).
 
 ### sync.ts — nơi DUY NHẤT nối Yjs
 Tạo `Y.Doc`, `yAnnotations = doc.getArray('annotations')`,
-`yViewState = doc.getMap('viewState')`, `provider = new WebsocketProvider(...)`.
-Room mặc định `pdfjs-pilot-annotations`, override qua `?room=` (dùng để cô lập
-test). Xuất `clientId` (từ `doc.clientID`) để tag transaction view-state.
+`provider = new WebsocketProvider(...)`, và xuất `awareness = provider.awareness`.
+**Không** còn `Y.Map('viewState')`: view state đi qua **Awareness** (presence),
+không ghi vào Y.Doc. Room mặc định `pdfjs-pilot-annotations`, override qua `?room=`
+(dùng để cô lập test). Xuất `clientId` (từ `doc.clientID`) làm `localOrigin` cho
+`ViewSync`.
 
 ### SearchHighlighter.ts + searchUI.ts — Search/TOC UI (host)
 - `SearchHighlighter` — vẽ match lên text-layer. Ghép `span.textContent` của các
@@ -144,17 +167,25 @@ Sở hữu `PdfRenderer`, `AnnotationStore`, 3 tool, `HitTester`,
 - Phát callback `on{Page,Zoom,ViewMode,Rotation}Change` cho host.
 
 ### viewSync.ts — đồng bộ view state 2 chiều
-Bắc cầu local↔shared với **3 lớp guard chống echo** + **settle window**. Chi tiết
-xem `docs/LESSONS_LEARNED.md` (mục view-sync). Thứ tự apply remote: viewMode →
-rotation → zoom → page.
+Bắc cầu local↔remote qua `ViewStateSource` (do `ViewStateAwareness` hiện thực,
+backing là **Awareness**, KHÔNG phải Y.Doc) với **3 lớp guard chống echo** +
+**settle window**. Chi tiết xem `docs/LESSONS_LEARNED.md` (mục view-sync). Thứ tự
+apply remote: viewMode → rotation → zoom → page. `syncInitial()` dùng
+`getRemoteState()`: nếu có peer remote thì adopt view của nó, nếu không thì seed từ
+state local hiện tại.
 
 ### TouchGestureManager.ts
 Chặn `touchmove` 1 ngón khi tool vẽ đang active; 2 ngón để browser pan/pinch.
 
 ### main.ts — điểm vào
-Dựng `ViewStateStore` + `ViewSync`, khởi tạo `DemoApp` với callback nối `ui.ts` và
-`ViewSync`, tạo sidebar, load PDF mẫu, rồi `viewSync.start()/syncInitial()`. Cũng
-gắn test hook: `__demoApp`, `__pdfProvider`, `__pdfSync`, `__pdfViewState`.
+Dựng `ViewStateAwareness` (trên `provider.awareness`) + `ViewSync`, khởi tạo
+`DemoApp` với callback nối `ui.ts` và `ViewSync`, tạo sidebar, load PDF mẫu, rồi
+`viewSync.start()/syncInitial()`. Cũng gắn test hook: `__demoApp`, `__pdfProvider`,
+`__pdfSync`, `__pdfViewState`. Test hook `__pdfViewState.set()` publish view như
+một **peer remote giả** (một `Awareness` thứ hai trên Y.Doc riêng → `clientID`
+khác, relay update vào awareness thật) để chạy đúng đường apply + guard như peer
+thật; `get()` đọc view local đã publish, `getRemote()` đọc view của peer giả (để
+kiểm "no echo").
 
 ---
 
@@ -173,13 +204,17 @@ pointerdown/move/up trên annotationCanvas (DemoApp)
 `document` mouseup → `TextSelectionManager.getSelection()` → mỗi client rect →
 `HighlightTool.createFromTextRange(...)` → store → render.
 
-### Đồng bộ view state
+### Đồng bộ view state (qua Awareness — KHÔNG ghi Y.Doc)
 ```
 UI/nav đổi → DemoApp.on*Change → ViewSync.handleLocal*Change
-   → ViewStateStore.setState({field}, LOCAL_ORIGIN) → Y.Map
-Remote update → ViewStateStore.subscribe → ViewSync.applyRemote
+   → ViewStateAwareness.setState({field}) → awareness.setLocalState({ view })
+   → Yjs phát awareness update tới peer (KHÔNG vào lịch sử doc; tự xoá khi rời)
+Peer remote đổi view → awareness 'change' → ViewStateAwareness.subscribe
+   → ViewSync.applyRemote (origin != local)
    → gọi absolute setter (setViewMode/setRotation/setZoom/goToPage) cho field khác biệt
 ```
+Self-filter bằng `clientID` (không phải origin) vì awareness không có lịch sử/commit
+đồng bộ như Y.Doc.
 
 ---
 
@@ -203,8 +238,9 @@ Mỗi phần tử `yAnnotations` là bản ghi JSON từ `serialize()`:
 - `NaN` trong path của ink → `null` khi serialize (JSON không có `NaN`), khôi phục
   ngược khi `deserialize`.
 
-`yViewState` là `Y.Map` phẳng: `viewMode: 'scroll'|'single'`, `zoom: number`,
-`rotation: number`, `page: number`.
+View state **không** ở trong Y.Doc. Nó nằm trong **Awareness** dưới trường `view`
+của mỗi peer: `{ viewMode: 'scroll'|'single', zoom: number, rotation: number,
+page: number }` — presence phù du, không lưu vào lịch sử doc, tự xoá khi peer rời.
 
 ---
 

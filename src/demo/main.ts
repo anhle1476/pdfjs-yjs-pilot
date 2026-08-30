@@ -8,8 +8,14 @@ import {
   updateViewModeInfo,
 } from './ui';
 import { createSearchUi, updateSearchUi } from './searchUI';
-import { provider, yViewState, clientId } from './sync';
-import { ViewStateStore } from '../lib';
+import * as Y from 'yjs';
+import {
+  Awareness,
+  applyAwarenessUpdate,
+  encodeAwarenessUpdate,
+} from 'y-protocols/awareness';
+import { provider, awareness, clientId } from './sync';
+import { ViewStateAwareness } from '../lib';
 import { ViewSync } from './viewSync';
 
 async function main(): Promise<void> {
@@ -18,8 +24,10 @@ async function main(): Promise<void> {
     throw new Error('Viewer container not found');
   }
 
-  // Shared view-state store + coordinator (view mode, zoom, rotation, page).
-  const viewStateStore = new ViewStateStore(yViewState);
+  // Shared view-state coordinator (view mode, zoom, rotation, page). Backed by
+  // the provider's Yjs *Awareness* (ephemeral presence) — NOT the Y.Doc — so
+  // frequent scroll/zoom/rotate actions never grow the CRDT history.
+  const viewStateSource = new ViewStateAwareness(awareness);
   // Forward-declared so the DemoApp change callbacks can reach it; assigned
   // right after the app is constructed.
   let viewSync: ViewSync;
@@ -49,7 +57,7 @@ async function main(): Promise<void> {
     },
   });
 
-  viewSync = new ViewSync(app, viewStateStore, clientId, {
+  viewSync = new ViewSync(app, viewStateSource, clientId, {
     onAfterApply: () => {
       updatePageInfo();
       updateZoomInfo();
@@ -192,12 +200,49 @@ async function main(): Promise<void> {
     get: () => app.store.getYArray().toArray(),
   };
 
-  // Test hook: read/write the shared view state directly. `get` returns the
-  // defaulted shared state; `set` writes as a *remote* origin so the local
-  // apply path (and its loop guards) run exactly as they would for a peer.
+  // Test hook: read the LOCAL published view state, and simulate a REMOTE
+  // peer's view change.
+  //
+  // View state now lives in Yjs *Awareness* (not the Y.Doc). To make `set()`
+  // exercise the exact same apply path + loop guards a real peer would trigger,
+  // we stand up a SECOND Awareness bound to its OWN Y.Doc (so it has a distinct
+  // clientID) and relay its awareness updates into the real provider awareness.
+  // Publishing a `view` field on that fake peer therefore appears to the local
+  // ViewStateAwareness as a genuine remote peer, driving ViewSync.applyRemote.
+  const remotePeerDoc = new Y.Doc();
+  const remotePeerAwareness = new Awareness(remotePeerDoc);
+  remotePeerAwareness.on('update', (changes: any) => {
+    const changed = [
+      ...changes.added,
+      ...changes.updated,
+      ...changes.removed,
+    ];
+    const update = encodeAwarenessUpdate(remotePeerAwareness, changed);
+    applyAwarenessUpdate(awareness, update, 'e2e-remote-peer');
+  });
+
   (window as any).__pdfViewState = {
-    get: () => viewStateStore.getState(),
-    set: (partial: any) => viewStateStore.setState(partial, 'e2e-remote'),
+    // `get` returns the LOCAL published view state — what a peer would receive
+    // from this client (used to assert local UI changes propagate outward).
+    get: () => viewStateSource.getState(),
+    // `getRemote` returns the fake remote peer's currently published view — used
+    // to assert that applying a remote change did NOT cause a write-back that
+    // mutated the remote/authoritative value (the "no echo" guarantee).
+    getRemote: () => {
+      const v = (remotePeerAwareness.getLocalState()?.view as any) ?? {};
+      return {
+        viewMode: v.viewMode ?? 'scroll',
+        zoom: typeof v.zoom === 'number' ? v.zoom : 1,
+        rotation: typeof v.rotation === 'number' ? v.rotation : 0,
+        page: typeof v.page === 'number' ? v.page : 1,
+      };
+    },
+    // `set` publishes the merged view state as the fake REMOTE peer, so the
+    // local apply path (and its loop guards) run exactly as for a real peer.
+    set: (partial: any) => {
+      const prev = (remotePeerAwareness.getLocalState()?.view as any) ?? {};
+      remotePeerAwareness.setLocalState({ view: { ...prev, ...partial } });
+    },
   };
 
   // Test hook: drive the search controller and read its state.

@@ -35,11 +35,15 @@ const ROOM_NAME = resolveRoomName();
 
 export const doc = new Y.Doc();
 export const yAnnotations = doc.getArray<any>('annotations');
-export const yViewState = doc.getMap<any>('viewState');
 export const provider = new WebsocketProvider(WS_SERVER_URL, ROOM_NAME, doc);
 
-// Stable per-tab client id, used to tag view-state transactions so a peer can
-// distinguish (and ignore) its own writes when observing the shared map.
+// View state (view mode, zoom, rotation, page) is replicated via the provider's
+// *Awareness* — ephemeral presence state that is NOT written into the Y.Doc, so
+// frequent scroll/zoom/rotate actions do not bloat the CRDT history. Annotations
+// remain in the Y.Doc (yAnnotations) as authoritative, persisted data.
+export const awareness = provider.awareness;
+
+// Stable per-tab client id, used as the ViewSync local origin.
 export const clientId = `client-${doc.clientID}`;
 
 provider.on('status', (event: { status: string }) => {

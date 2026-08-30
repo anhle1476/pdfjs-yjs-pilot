@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import * as Y from 'yjs';
-import { ViewStateStore } from '../../src/lib/ViewStateStore';
+import { ViewStateAwareness } from '../../src/lib/ViewStateAwareness';
 import { ViewSync, type ViewSyncApp } from '../../src/demo/viewSync';
+import { FakeAwareness } from './ViewStateAwareness.test';
 
 const LOCAL = 'local-origin';
 
@@ -47,15 +47,19 @@ class StubApp implements ViewSyncApp {
   }
 }
 
-function makeStore() {
-  const doc = new Y.Doc();
-  return new ViewStateStore(doc.getMap<any>('viewState'));
+// The backing source for ViewSync is now a ViewStateAwareness over a fake
+// Awareness. `aw` is exposed so tests can simulate a REMOTE peer publishing a
+// view (injectRemote) exactly like a real peer would.
+function makeStore(localClientId = 1) {
+  const aw = new FakeAwareness(localClientId);
+  const store = new ViewStateAwareness(aw);
+  return { store, aw };
 }
 
 describe('ViewSync', () => {
   it('applying a remote update calls each changed setter exactly once', async () => {
     const app = new StubApp();
-    const store = makeStore();
+    const { store } = makeStore();
     const sync = new ViewSync(app, store, LOCAL);
 
     await sync.applyRemote({
@@ -81,7 +85,7 @@ describe('ViewSync', () => {
     const app = new StubApp();
     app.viewMode = 'single';
     app.rotation = 90;
-    const store = makeStore();
+    const { store } = makeStore();
     const sync = new ViewSync(app, store, LOCAL);
 
     await sync.applyRemote({
@@ -102,7 +106,7 @@ describe('ViewSync', () => {
   it('treats a sub-epsilon zoom difference as a no-op', async () => {
     const app = new StubApp();
     app.zoom = 1.0;
-    const store = makeStore();
+    const { store } = makeStore();
     const sync = new ViewSync(app, store, LOCAL);
 
     await sync.applyRemote({
@@ -117,7 +121,7 @@ describe('ViewSync', () => {
 
   it('local change handlers do not write while a remote apply is in flight', async () => {
     const app = new StubApp();
-    const store = makeStore();
+    const { store } = makeStore();
     const setSpy = vi.spyOn(store, 'setState');
     // setViewMode is async; during its await isApplyingRemote must stay true.
     let sawGuardDuringApply = false;
@@ -140,50 +144,58 @@ describe('ViewSync', () => {
     });
 
     expect(sawGuardDuringApply).toBe(true);
-    // The only setState calls should be the applyRemote-driven ones, none from
-    // the re-entrant local zoom handler (which must early-return).
+    // No setState call from the re-entrant local zoom handler (must early-return
+    // while a remote apply is in flight). applyRemote itself never writes.
     const zoomWrites = setSpy.mock.calls.filter(
       (c) => (c[0] as any)?.zoom === 9
     );
     expect(zoomWrites).toHaveLength(0);
   });
 
-  it('write-path handlers tag the shared map with the local origin', () => {
+  it('write-path handlers publish to local awareness (own writes do not echo back)', () => {
     const app = new StubApp();
-    const store = makeStore();
-    const origins: unknown[] = [];
-    store.subscribe((_s, origin) => origins.push(origin));
+    const { store } = makeStore();
+    // Subscribe should NEVER fire for our own local writes (self-filter by
+    // clientID) — that is the awareness-model "no echo" guarantee.
+    const remoteApplies: unknown[] = [];
+    store.subscribe((state) => remoteApplies.push(state));
     const sync = new ViewSync(app, store, LOCAL);
 
     sync.handleLocalZoomChange(2);
     sync.handleLocalPageChange(4);
-    expect(origins).toEqual([LOCAL, LOCAL]);
+
+    // Local publish is reflected in our own published (local) state...
+    expect(store.getState().zoom).toBe(2);
+    expect(store.getState().page).toBe(4);
+    // ...but never echoed to the remote-apply subscriber.
+    expect(remoteApplies).toHaveLength(0);
   });
 
-  it('start() ignores events whose origin is the local origin (no echo)', () => {
+  it('start() applies remote peer changes but never echoes our own writes (no echo)', () => {
     const app = new StubApp();
-    const store = makeStore();
+    const { store, aw } = makeStore(1);
     const sync = new ViewSync(app, store, LOCAL);
     sync.start();
 
-    // A local-origin write must not drive any absolute setter.
-    store.setState({ zoom: 5 }, LOCAL);
+    // A local write must not drive any absolute setter.
+    sync.handleLocalZoomChange(5);
     expect(app.calls.setZoom).toBe(0);
 
-    // A remote-origin write (distinct value) must be applied.
-    store.setState({ zoom: 6 }, 'remote-peer');
+    // A remote peer publishing a distinct value must be applied.
+    aw.injectRemote(2, { view: { viewMode: 'scroll', zoom: 6, rotation: 0, page: 1 } });
     expect(app.calls.setZoom).toBe(1);
+    expect(app.zoom).toBe(6);
 
     sync.stop();
   });
 
-  it('syncInitial seeds the shared map when empty', () => {
+  it('syncInitial seeds the local published state when no remote peer exists', () => {
     const app = new StubApp();
     app.viewMode = 'single';
     app.zoom = 1.5;
     app.rotation = 180;
     app.page = 2;
-    const store = makeStore();
+    const { store } = makeStore();
     const sync = new ViewSync(app, store, LOCAL);
 
     sync.syncInitial();
@@ -194,14 +206,17 @@ describe('ViewSync', () => {
       rotation: 180,
       page: 2,
     });
-    // Seeding is a write, not an apply.
+    // Seeding is a publish, not an apply.
     expect(app.calls.setZoom).toBe(0);
   });
 
-  it('syncInitial adopts existing shared state when non-empty', async () => {
+  it('syncInitial adopts an existing remote peer view when one is present', async () => {
     const app = new StubApp();
-    const store = makeStore();
-    store.setState({ viewMode: 'single', zoom: 2, rotation: 90, page: 3 }, 'seed');
+    const { store, aw } = makeStore(10);
+    // A remote peer is already publishing a view before we join.
+    aw.injectRemote(2, {
+      view: { viewMode: 'single', zoom: 2, rotation: 90, page: 3 },
+    });
     const sync = new ViewSync(app, store, LOCAL);
 
     sync.syncInitial();
@@ -216,7 +231,7 @@ describe('ViewSync', () => {
 
   it('defers applying while shouldDeferApply is true', async () => {
     const app = new StubApp();
-    const store = makeStore();
+    const { store } = makeStore();
     let editing = true;
     const sync = new ViewSync(app, store, LOCAL, {
       shouldDeferApply: () => editing,
@@ -246,9 +261,9 @@ describe('ViewSync', () => {
     // Reproduces the scroll-driven write-back race: applyRemote(goToPage)
     // scrolls the container, whose debounced scroll listener later emits a
     // local page-change AFTER isApplyingRemote has cleared. That delayed
-    // callback must NOT write back to the shared map.
+    // callback must NOT publish back to the shared view.
     const app = new StubApp();
-    const store = makeStore();
+    const { store } = makeStore();
     const setSpy = vi.spyOn(store, 'setState');
 
     // Controllable fake timer so we can decide when the settle window closes.
@@ -286,7 +301,7 @@ describe('ViewSync', () => {
 
   it('settleMs=0 disables the post-apply window (local write allowed immediately)', async () => {
     const app = new StubApp();
-    const store = makeStore();
+    const { store } = makeStore();
     const setSpy = vi.spyOn(store, 'setState');
     const sync = new ViewSync(app, store, LOCAL, { settleMs: 0 });
 

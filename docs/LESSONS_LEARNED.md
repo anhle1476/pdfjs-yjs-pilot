@@ -58,12 +58,23 @@ thật, kiểm thêm: Apple Pencil / stylus (`pointerType`), trình duyệt in-a
 
 ## 4. Đồng bộ view-state 2 chiều: 3 guard + settle window (dễ ping-pong)
 
+**View-state đi qua Awareness, KHÔNG qua Y.Doc.** View state đổi trên hành động
+tần suất cao (scroll/zoom/rotate/lật trang). Nếu ghi vào `Y.Doc` (CRDT có lịch sử
+vĩnh viễn, chỉ append), doc **phình vô hạn** dù chỉ giá trị mới nhất mới có nghĩa —
+mỗi cú scroll/zoom để lại một bản ghi lịch sử không bao giờ thu hồi. **Awareness**
+là presence phù du: không vào lịch sử doc, tự xoá khi peer ngắt kết nối → đúng chỗ
+cho "peer đang xem ở đâu". **Annotation vẫn ở Y.Doc** (Y.Array) vì là dữ liệu bền,
+cần lịch sử/persistence. `ViewStateAwareness` hiện thực `ViewStateSource`; `ViewSync`
+phụ thuộc interface đó, không phụ thuộc backing cụ thể — nên đổi backing (Y.Map →
+Awareness) coordinator gần như không đổi.
+
 **Vấn đề**: áp thay đổi remote → trigger callback local → ghi lại → ping-pong.
 
 **Khi migrate `ViewSync`, giữ đủ cả 3 lớp** (bỏ lớp nào cũng lỗi):
 1. Cờ `isApplyingRemote` (giữ qua `await`, clear trong `finally`).
-2. Origin tagging — Yjs gọi observer **đồng bộ ngay trên commit local**, nên cần
-   bỏ qua event có `origin === localOrigin`.
+2. Self-filter — với Awareness, lọc chính mình bằng **`clientID`** (không có commit
+   đồng bộ như Y.Map nên không dựa vào transaction origin); `subscribe` chỉ phát khi
+   một peer **remote** đổi trường `view`, kèm origin ≠ local để `ViewSync` áp.
 3. Value diffing — chỉ ghi/áp field đã đổi; zoom so bằng `ZOOM_EPSILON`.
 
 **Cạm bẫy settle window** (`APPLY_SETTLE_MS`): `goToPage` set `scrollTop` → scroll
@@ -90,8 +101,9 @@ state; test "pass đơn lẻ, fail theo suite".
 
 ## 6. Ranh giới sở hữu: lib KHÔNG tạo Y.Doc / KHÔNG đụng network
 
-**Nguyên tắc pilot**: `AnnotationStore`/`ViewStateStore` chỉ nhận `Y.Array`/`Y.Map`
-do host cấp; `src/demo/sync.ts` là nơi duy nhất tạo `Y.Doc` + provider.
+**Nguyên tắc pilot**: `AnnotationStore` chỉ nhận `Y.Array`, `ViewStateAwareness`
+chỉ nhận một `Awareness` (interface cấu trúc `AwarenessLike`) — đều do host cấp;
+`src/demo/sync.ts` là nơi duy nhất tạo `Y.Doc` + provider (+ `provider.awareness`).
 
 **Khi migrate**: đây là điểm tích hợp chính. App thật cắm transport/auth/room của
 mình vào chỗ của `sync.ts`, rồi trao cấu trúc chia sẻ cho store. **Không** để logic

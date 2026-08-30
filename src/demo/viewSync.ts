@@ -2,23 +2,28 @@
 //
 // It bridges two directions:
 //   - Local -> shared: the DemoApp fires on{Page,Zoom,ViewMode,Rotation}Change
-//     callbacks; ViewSync writes the changed field into the shared Y.Map
-//     (tagged with LOCAL_ORIGIN).
-//   - Shared -> local: ViewStateStore.subscribe fires on remote updates;
+//     callbacks; ViewSync publishes the changed field into the shared view
+//     source (a Yjs Awareness field, tagged with LOCAL_ORIGIN).
+//   - Shared -> local: ViewStateSource.subscribe fires on remote updates;
 //     ViewSync applies only the differing fields via the DemoApp's *absolute*
 //     setters (setViewMode / setRotation / setZoom / goToPage).
+//
+// The backing source is a ViewStateSource (see src/lib/ViewStateAwareness).
+// View state lives in Yjs *Awareness* (ephemeral presence), NOT the Y.Doc, so
+// frequent scroll/zoom/rotate actions never grow the CRDT history.
 //
 // Three complementary loop guards keep this from ping-ponging:
 //   1. isApplyingRemote flag — write-path handlers early-return while a remote
 //      apply is in flight (held across setViewMode's await, cleared in finally).
-//   2. Origin tagging — writes use LOCAL_ORIGIN; the observer skips events whose
-//      transaction origin is LOCAL_ORIGIN (Yjs fires observers synchronously on
-//      the local commit too, so this backstops the flag).
-//   3. Value diffing — a key is written only if changed, and a field is applied
-//      only if it differs from the current local value (zoom compared with an
-//      epsilon) so float noise cannot oscillate.
+//   2. Origin tagging — writes use LOCAL_ORIGIN; the subscriber skips events
+//      whose origin is LOCAL_ORIGIN. For the awareness source, self-writes are
+//      additionally filtered by clientID, and remote changes carry a non-local
+//      origin so this guard passes them through.
+//   3. Value diffing — a field is applied only if it differs from the current
+//      local value (zoom compared with an epsilon) so float noise cannot
+//      oscillate.
 
-import type { ViewState, ViewStateStore, ViewModeState } from '../lib';
+import type { ViewState, ViewStateSource, ViewModeState } from '../lib';
 
 /**
  * Minimal surface of DemoApp that ViewSync needs. Declared structurally so the
@@ -67,7 +72,7 @@ export interface ViewSyncOptions {
 
 export class ViewSync {
   private app: ViewSyncApp;
-  private store: ViewStateStore;
+  private store: ViewStateSource;
   private readonly localOrigin: unknown;
   private options: ViewSyncOptions;
 
@@ -85,7 +90,7 @@ export class ViewSync {
 
   constructor(
     app: ViewSyncApp,
-    store: ViewStateStore,
+    store: ViewStateSource,
     localOrigin: unknown,
     options: ViewSyncOptions = {}
   ) {
@@ -162,11 +167,13 @@ export class ViewSync {
   // ----- Shared -> local (apply path) -----
 
   /**
-   * Adopt the current shared state on join. If the shared map is empty, the
-   * first peer seeds it from the app's current local state instead.
+   * Adopt the current shared state on join. If no remote peer is publishing a
+   * view yet, this (first) peer seeds it from the app's current local state
+   * instead. Otherwise it adopts the authoritative remote view.
    */
   public syncInitial(): void {
-    if (this.store.isEmpty()) {
+    const remote = this.store.getRemoteState();
+    if (remote === null) {
       this.store.setState(
         {
           viewMode: this.app.getViewMode(),
@@ -178,7 +185,7 @@ export class ViewSync {
       );
       return;
     }
-    void this.applyRemote(this.store.getState());
+    void this.applyRemote(remote);
   }
 
   /**

@@ -4,14 +4,20 @@ import { test, expect, Page } from '@playwright/test';
  * E2E coverage for cross-peer view-state synchronization (view mode, zoom,
  * rotation, page).
  *
- * A true two-browser test would require the y-websocket server
- * (ws://localhost:1234), which the Playwright config does not start. Instead we
- * use the store-reflection approach: window.__pdfViewState.set(...) writes into
- * the shared Yjs map tagged with a *remote* origin ('e2e-remote'), which drives
- * the exact same apply path a real peer would trigger. Asserting the viewer's
- * public getters change proves "a state change from another peer is reflected
- * locally". The reverse direction (local UI change -> shared map) is covered by
- * the "local UI change writes into the shared view state" test.
+ * View state is replicated via Yjs *Awareness* (ephemeral presence), NOT the
+ * Y.Doc. A true two-browser test would require the y-websocket server
+ * (ws://localhost:1234), which the Playwright config does not start. Instead,
+ * window.__pdfViewState.set(...) publishes into a SECOND Awareness (a fake
+ * remote peer with its own clientID) whose updates are relayed into the real
+ * provider awareness. This drives the exact same apply path a real peer would
+ * trigger. Asserting the viewer's public getters change proves "a state change
+ * from another peer is reflected locally".
+ *
+ * `__pdfViewState.get()` returns the LOCAL published view (what this client
+ * broadcasts). `__pdfViewState.getRemote()` returns the fake remote peer's
+ * published view, used to prove applying a remote change does not write back
+ * (no echo). The reverse direction (local UI change -> local published view) is
+ * covered by the "local UI change writes into the shared view state" test.
  *
  * NOTE: like the smoke tests, this depends on outbound internet access to fetch
  * the sample PDF and the pdf.js worker.
@@ -127,11 +133,11 @@ test('no echo: applying a remote change does not mutate the shared value back', 
     .poll(() => getZoom(page), { timeout: 10_000 })
     .toBeCloseTo(1.75, 3);
 
-  // Settle, then confirm the shared value has NOT drifted (no local write-back
-  // ping-pong occurred while applying the remote zoom).
+  // Settle, then confirm the remote/authoritative value has NOT drifted (no
+  // local write-back ping-pong occurred while applying the remote zoom).
   await page.waitForTimeout(500);
   const shared = await page.evaluate(
-    () => (window as any).__pdfViewState.get().zoom
+    () => (window as any).__pdfViewState.getRemote().zoom
   );
   expect(shared).toBeCloseTo(1.75, 3);
   // And the local viewer still matches.
@@ -184,9 +190,10 @@ test('regression: applying a remote page in scroll mode does not drift the share
   // Wait well past the scroll debounce (100ms) and the settle window (250ms).
   await page.waitForTimeout(700);
 
-  // The shared page value must still be exactly 3 — no write-back ping-pong.
+  // The remote/authoritative page value must still be exactly 3 — no
+  // write-back ping-pong from the local scroll listener.
   const sharedPage = await page.evaluate(
-    () => (window as any).__pdfViewState.get().page
+    () => (window as any).__pdfViewState.getRemote().page
   );
   expect(sharedPage).toBe(3);
 });
