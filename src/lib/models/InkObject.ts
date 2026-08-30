@@ -1,5 +1,9 @@
-import { AnnotationObject, Rect } from '../plugins/IToolPlugin';
-import { InkPath } from '../types';
+import { AnnotationObject, Rect } from './AnnotationObject';
+
+export interface InkPath {
+  line: number[];
+  points: number[];
+}
 
 export interface InkObjectData {
   type: 'ink';

@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "server": "npx y-websocket",
     "start": "npx concurrently \"npx y-websocket\" \"vite\"",
+    "test": "vitest run",
     "test:e2e": "playwright test"
   },
   "dependencies": {

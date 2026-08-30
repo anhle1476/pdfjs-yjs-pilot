@@ -17,13 +17,3 @@ export abstract class AnnotationObject {
   abstract deserialize(data: any): void;
   abstract render(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void;
 }
-
-export interface IToolPlugin {
-  activate(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D): void;
-  deactivate(): void;
-  onPointerDown(evt: PointerEvent): void;
-  onPointerMove(evt: PointerEvent): void;
-  onPointerUp(evt: PointerEvent): void;
-  render(ctx: CanvasRenderingContext2D): void;
-  getObjects(): AnnotationObject[];
-}

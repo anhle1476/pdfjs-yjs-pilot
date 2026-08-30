@@ -1,3 +1,7 @@
+// Demo sidebar/toolbar UI. Copied from the previous src/ui.ts almost verbatim;
+// it is pure DOM and only invokes the callbacks supplied by main.ts (which now
+// drive DemoApp instead of the old PdfPilot).
+
 export interface SidebarOptions {
   onDraw: () => void;
   onText: () => void;

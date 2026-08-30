@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { HighlightOutliner, HighlightOutline } from '../src/drawers/HighlightOutliner';
-import { HighlightObject } from '../src/models/HighlightObject';
-import { HighlightPlugin } from '../src/plugins/HighlightPlugin';
+import {
+  HighlightOutliner,
+  HighlightOutline,
+} from '../../../src/lib/drawers/HighlightOutliner';
+import { HighlightObject } from '../../../src/lib/models/HighlightObject';
+
+// Ported from tests/HighlightPlugin.test.ts. The plugin-specific describe
+// block (HighlightPlugin) is intentionally NOT ported here — its behaviour now
+// lives in HighlightTool (see tests/lib/tools/HighlightTool.test.ts). The
+// drawer + model + performance + edge-case blocks are unchanged, only the
+// import paths moved into src/lib/drawers and src/lib/models.
 
 describe('HighlightOutliner', () => {
   it('creates outlines from a single box', () => {
@@ -17,7 +25,7 @@ describe('HighlightOutliner', () => {
   it('creates outlines from multiple boxes', () => {
     const boxes = [
       { x: 0.1, y: 0.1, width: 0.2, height: 0.1 },
-      { x: 0.4, y: 0.1, width: 0.2, height: 0.1 }
+      { x: 0.4, y: 0.1, width: 0.2, height: 0.1 },
     ];
     const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
     const outlines = outliner.getOutlines();
@@ -30,11 +38,8 @@ describe('HighlightOutliner', () => {
     const outlinerLTR = new HighlightOutliner(boxes, 0.001, 0.001, true);
     const outlinerRTL = new HighlightOutliner(boxes, 0.001, 0.001, false);
 
-    const outlinesLTR = outlinerLTR.getOutlines();
-    const outlinesRTL = outlinerRTL.getOutlines();
-
-    expect(outlinesLTR).toBeInstanceOf(HighlightOutline);
-    expect(outlinesRTL).toBeInstanceOf(HighlightOutline);
+    expect(outlinerLTR.getOutlines()).toBeInstanceOf(HighlightOutline);
+    expect(outlinerRTL.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('handles empty boxes array', () => {
@@ -48,9 +53,7 @@ describe('HighlightOutliner', () => {
   it('handles box with zero dimensions', () => {
     const boxes = [{ x: 0.1, y: 0.1, width: 0, height: 0 }];
     const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('respects borderWidth parameter', () => {
@@ -91,34 +94,28 @@ describe('HighlightOutliner', () => {
   it('handles overlapping boxes', () => {
     const boxes = [
       { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
-      { x: 0.15, y: 0.15, width: 0.2, height: 0.2 }
+      { x: 0.15, y: 0.15, width: 0.2, height: 0.2 },
     ];
     const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('handles adjacent boxes', () => {
     const boxes = [
       { x: 0.1, y: 0.1, width: 0.1, height: 0.1 },
-      { x: 0.2, y: 0.1, width: 0.1, height: 0.1 }
+      { x: 0.2, y: 0.1, width: 0.1, height: 0.1 },
     ];
     const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('handles nested boxes', () => {
     const boxes = [
       { x: 0.1, y: 0.1, width: 0.3, height: 0.3 },
-      { x: 0.15, y: 0.15, width: 0.2, height: 0.2 }
+      { x: 0.15, y: 0.15, width: 0.2, height: 0.2 },
     ];
     const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 });
 
@@ -175,15 +172,8 @@ describe('HighlightOutline', () => {
   });
 
   it('handles empty outlines', () => {
-    const outlines = new HighlightOutline(
-      [],
-      new Float32Array([0, 0, 1, 1]),
-      [0, 0],
-      [1, 1]
-    );
-
-    const svgPath = outlines.toSVGPath();
-    expect(svgPath).toBe('');
+    const outlines = new HighlightOutline([], new Float32Array([0, 0, 1, 1]), [0, 0], [1, 1]);
+    expect(outlines.toSVGPath()).toBe('');
   });
 
   it('returns correct box', () => {
@@ -212,17 +202,15 @@ describe('HighlightOutline', () => {
       [1, 0]
     );
 
-    const svgPath = outlines.toSVGPath();
-    expect(svgPath.length).toBeGreaterThan(0);
+    expect(outlines.toSVGPath().length).toBeGreaterThan(0);
   });
 });
 
 describe('HighlightObject', () => {
   beforeEach(() => {
-    // Mock Path2D for Node.js environment
     if (typeof (globalThis as any).Path2D === 'undefined') {
       (globalThis as any).Path2D = class Path2D {
-        constructor(path?: string) {}
+        constructor(_path?: string) {}
       } as any;
     }
   });
@@ -250,9 +238,7 @@ describe('HighlightObject', () => {
 
   it('handles empty paths in bounds calculation', () => {
     const highlight = new HighlightObject('test-empty', [], '#ff0000', 1);
-
-    const bounds = highlight.getBounds();
-    expect(bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(highlight.getBounds()).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
 
   it('hitTest returns true for point inside polygon', () => {
@@ -379,7 +365,7 @@ describe('HighlightObject', () => {
       paths: [{ polygon: [0.1, 0.1, 0.2, 0.1, 0.2, 0.2, 0.1, 0.2, 0.1, 0.1] }],
       color: '#ff0000',
       opacity: 1,
-      bounds: { x: 0.1, y: 0.1, width: 0.1, height: 0.1 }
+      bounds: { x: 0.1, y: 0.1, width: 0.1, height: 0.1 },
     };
 
     const restored = new HighlightObject();
@@ -403,7 +389,7 @@ describe('HighlightObject', () => {
       translate: vi.fn(),
       scale: vi.fn(),
       fillStyle: '',
-      globalAlpha: 0
+      globalAlpha: 0,
     } as unknown as CanvasRenderingContext2D;
 
     highlight.render(mockCtx, 100, 100);
@@ -425,7 +411,8 @@ describe('HighlightObject', () => {
       beginPath: vi.fn(),
       fill: vi.fn(),
       translate: vi.fn(),
-      scale: vi.fn()
+      scale: vi.fn(),
+      fillRect: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     highlight.render(mockCtx, 100, 100);
@@ -440,7 +427,7 @@ describe('HighlightObject', () => {
     const highlight = new HighlightObject('test-outline', paths, '#ff0000', 1);
 
     const outline = new HighlightOutline(
-      paths.map(p => p.polygon),
+      paths.map((p) => p.polygon),
       new Float32Array([0.05, 0.05, 0.2, 0.2]),
       [0.1, 0.1],
       [0.2, 0.2]
@@ -456,7 +443,6 @@ describe('HighlightObject', () => {
 
   it('outlineData returns null when no outline set', () => {
     const highlight = new HighlightObject('test-no-outline', [], '#ff0000', 1);
-
     expect(highlight.outlineData).toBeNull();
   });
 
@@ -465,7 +451,7 @@ describe('HighlightObject', () => {
     const highlight = new HighlightObject('test-outline-data', paths, '#ff0000', 1);
 
     const outline = new HighlightOutline(
-      paths.map(p => p.polygon),
+      paths.map((p) => p.polygon),
       new Float32Array([0.05, 0.05, 0.2, 0.2]),
       [0.1, 0.1],
       [0.2, 0.2]
@@ -490,274 +476,11 @@ describe('HighlightObject', () => {
   });
 });
 
-describe('HighlightPlugin', () => {
-  let canvas: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D;
-  let store: any[];
-
-  beforeEach(() => {
-    // Mock Path2D for Node.js environment
-    if (typeof (globalThis as any).Path2D === 'undefined') {
-      (globalThis as any).Path2D = class Path2D {
-        constructor(path?: string) {}
-      } as any;
-    }
-
-    canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
-
-    ctx = {
-      canvas,
-      save: vi.fn(),
-      restore: vi.fn(),
-      scale: vi.fn(),
-      translate: vi.fn(),
-      strokeStyle: '',
-      globalAlpha: 0,
-      lineWidth: 0,
-      strokeRect: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      closePath: vi.fn(),
-      fill: vi.fn(),
-      clearRect: vi.fn()
-    } as unknown as CanvasRenderingContext2D;
-
-    canvas.getBoundingClientRect = () => ({
-      left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => {}
-    });
-
-    store = [];
-  });
-
-  it('creates plugin with empty store', () => {
-    const plugin = new HighlightPlugin(store);
-
-    expect(plugin).toBeDefined();
-    expect(plugin.getObjects()).toEqual([]);
-  });
-
-  it('activate sets canvas and context', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    expect(plugin.getObjects()).toEqual([]);
-  });
-
-  it('deactivate clears state', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-    plugin.deactivate();
-
-    expect(plugin.getObjects()).toEqual([]);
-  });
-
-  it('onPointerDown starts drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('onPointerMove updates current boxes during drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('onPointerUp creates highlight object on valid selection', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect(store.length).toBe(1);
-    expect(store[0]).toBeInstanceOf(HighlightObject);
-  });
-
-  it('onPointerUp does not create object for tiny selection', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 100.5, clientY: 100.5 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 100.5, clientY: 100.5 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('onPointerUp handles reverse drag direction', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 200, clientY: 200 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 300, clientY: 300 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 300, clientY: 300 }));
-
-    expect(store.length).toBe(1);
-    expect(store[0]).toBeInstanceOf(HighlightObject);
-  });
-
-  it('handles events when not active', () => {
-    const plugin = new HighlightPlugin(store);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('handles events when not drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('handles deactivate while drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.deactivate();
-
-    expect(plugin.getObjects()).toEqual([]);
-  });
-
-  it('render draws all objects in store', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    plugin.render(ctx);
-
-    expect(ctx.save).toHaveBeenCalled();
-    expect(ctx.restore).toHaveBeenCalled();
-  });
-
-  it('render draws preview box during drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.mode = 'box';
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-
-    plugin.render(ctx);
-
-    expect(ctx.strokeRect).toHaveBeenCalled();
-  });
-
-  it('render draws freeform preview during drawing', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.mode = 'free';
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-
-    plugin.render(ctx);
-
-    expect(ctx.fill).toHaveBeenCalled();
-  });
-
-  it('render handles not active state', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.render(ctx);
-
-    expect(ctx.save).not.toHaveBeenCalled();
-  });
-
-  it('setColor updates plugin color', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.setColor('#ff0000');
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect((store[0] as HighlightObject).color).toBe('#ff0000');
-  });
-
-  it('setOpacity updates plugin opacity', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.setOpacity(0.5);
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect((store[0] as HighlightObject).opacity).toBe(0.5);
-  });
-
-  it('setOpacity clamps values to valid range', () => {
-    const plugin = new HighlightPlugin(store);
-
-    plugin.setOpacity(-0.5);
-    expect(plugin['opacity']).toBe(0);
-
-    plugin.setOpacity(1.5);
-    expect(plugin['opacity']).toBe(1);
-  });
-
-  it('getObjects returns the store', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    expect(plugin.getObjects()).toStrictEqual(store);
-    expect(plugin.getObjects().length).toBe(1);
-  });
-
-  it('creates multiple highlight objects', () => {
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 200, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 200, clientY: 200 }));
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 300, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 400, clientY: 200 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 400, clientY: 200 }));
-
-    expect(store.length).toBe(2);
-    expect(plugin.getObjects().length).toBe(2);
-  });
-});
-
 describe('Performance Benchmarks', () => {
   it('HighlightOutliner handles many boxes efficiently', () => {
     const boxes = [];
     for (let i = 0; i < 100; i++) {
-      boxes.push({
-        x: i * 0.01,
-        y: i * 0.01,
-        width: 0.01,
-        height: 0.01
-      });
+      boxes.push({ x: i * 0.01, y: i * 0.01, width: 0.01, height: 0.01 });
     }
 
     const start = performance.now();
@@ -830,79 +553,6 @@ describe('Performance Benchmarks', () => {
 });
 
 describe('Edge Cases', () => {
-  beforeEach(() => {
-    // Mock Path2D for Node.js environment
-    if (typeof (globalThis as any).Path2D === 'undefined') {
-      (globalThis as any).Path2D = class Path2D {
-        constructor(path?: string) {}
-      } as any;
-    }
-  });
-
-  it('handles very small highlight (1 pixel)', () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
-
-    const ctx = {
-      canvas,
-      save: vi.fn(),
-      restore: vi.fn(),
-      scale: vi.fn(),
-      translate: vi.fn(),
-      fill: vi.fn(),
-      strokeStyle: '',
-      globalAlpha: 0,
-      lineWidth: 0,
-      strokeRect: vi.fn()
-    } as unknown as CanvasRenderingContext2D;
-
-    canvas.getBoundingClientRect = () => ({
-      left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => {}
-    });
-
-    const store: any[] = [];
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 100.1, clientY: 100.1 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 100.1, clientY: 100.1 }));
-
-    expect(store.length).toBe(0);
-  });
-
-  it('handles diagonal drag', () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
-
-    const ctx = {
-      canvas,
-      save: vi.fn(),
-      restore: vi.fn(),
-      scale: vi.fn(),
-      translate: vi.fn(),
-      fill: vi.fn(),
-      strokeRect: vi.fn()
-    } as unknown as CanvasRenderingContext2D;
-
-    canvas.getBoundingClientRect = () => ({
-      left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => {}
-    });
-
-    const store: any[] = [];
-    const plugin = new HighlightPlugin(store);
-    plugin.activate(canvas, ctx);
-
-    plugin.onPointerDown(new PointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
-    plugin.onPointerMove(new PointerEvent('pointermove', { clientX: 300, clientY: 300 }));
-    plugin.onPointerUp(new PointerEvent('pointerup', { clientX: 300, clientY: 300 }));
-
-    expect(store.length).toBe(1);
-    expect(store[0]).toBeInstanceOf(HighlightObject);
-  });
-
   it('handles extremely large coordinates', () => {
     const outliner = new HighlightOutliner(
       [{ x: 1e10, y: 1e10, width: 1e10, height: 1e10 }],
@@ -910,9 +560,7 @@ describe('Edge Cases', () => {
       0.001,
       true
     );
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('handles negative coordinates', () => {
@@ -922,9 +570,7 @@ describe('Edge Cases', () => {
       0.001,
       true
     );
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 
   it('handles coordinates near zero', () => {
@@ -934,8 +580,6 @@ describe('Edge Cases', () => {
       0,
       true
     );
-    const outlines = outliner.getOutlines();
-
-    expect(outlines).toBeInstanceOf(HighlightOutline);
+    expect(outliner.getOutlines()).toBeInstanceOf(HighlightOutline);
   });
 });

@@ -171,6 +171,7 @@ export class PageController {
       ctx.scale(scale, scale);
 
       const renderContext = {
+        canvas: viewerCanvas,
         canvasContext: ctx,
         viewport: viewport,
       };

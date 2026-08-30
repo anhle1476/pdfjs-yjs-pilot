@@ -1,4 +1,4 @@
-import { AnnotationObject, Rect } from '../plugins/IToolPlugin';
+import { AnnotationObject, Rect } from './AnnotationObject';
 
 export interface HighlightPath {
   polygon: number[];
