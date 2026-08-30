@@ -115,8 +115,15 @@ html, body {
   z-index: 100;
 }
 
-.freetext-editor:hover {
+.freetext-editor:hover,
+.freetext-editor.annotation-hovered {
   border-color: rgba(37, 99, 235, 0.3);
+}
+
+.freetext-editor.annotation-selected {
+  border-color: #2563eb;
+  border-style: dashed;
+  box-shadow: 0 0 3px rgba(37, 99, 235, 0.35);
 }
 
 .freetext-editor.editing {

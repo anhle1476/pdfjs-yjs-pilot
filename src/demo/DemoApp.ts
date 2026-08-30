@@ -37,10 +37,14 @@ export interface DemoAppOptions {
 
 interface CanvasBinding {
   canvas: HTMLCanvasElement;
+  container: HTMLElement;
   pageNumber: number;
   onDown: (e: PointerEvent) => void;
   onMove: (e: PointerEvent) => void;
   onUp: (e: PointerEvent) => void;
+  onSelectDown: (e: PointerEvent) => void;
+  onSelectMove: (e: PointerEvent) => void;
+  onSelectLeave: (e: PointerEvent) => void;
 }
 
 export class DemoApp {
@@ -68,6 +72,10 @@ export class DemoApp {
 
   // Currently selected annotation id (via the 'select' tool / hit testing).
   private selectedId: string | null = null;
+
+  // Annotation currently under the pointer while the select tool is active.
+  private hoveredId: string | null = null;
+  private hoveredPageNumber: number | null = null;
 
   private bindings: CanvasBinding[] = [];
   private storeUnsub: (() => void) | null = null;
@@ -177,11 +185,17 @@ export class DemoApp {
   // ----- Tool management -----
 
   public setTool(tool: DemoTool): void {
+    const wasSelect = this.currentTool === 'select';
+
     if (this.currentTool === 'freetext' && tool !== 'freetext') {
       // Leaving freetext: keep editors visible but commit any active one.
       this.freeTextTool.setPageNumber(this.renderer.getCurrentPage());
     }
     this.currentTool = tool;
+
+    if (tool !== 'select') {
+      this.clearHoverPreview();
+    }
 
     // Toggle pointer-events so freetext editors are only interactive when the
     // freetext tool is active; otherwise the annotation canvas gets the events.
@@ -189,6 +203,12 @@ export class DemoApp {
 
     if (tool === 'freetext') {
       this.activateFreeTextForCurrentPage();
+    }
+
+    // Repaint annotation/free-text selection state when entering or leaving
+    // select mode.
+    if (wasSelect || tool === 'select') {
+      this.renderAllPages();
     }
   }
 
@@ -212,6 +232,10 @@ export class DemoApp {
 
   public getSelectedId(): string | null {
     return this.selectedId;
+  }
+
+  public getHoveredId(): string | null {
+    return this.hoveredId;
   }
 
   /**
@@ -246,6 +270,7 @@ export class DemoApp {
   // ----- Canvas binding -----
 
   private rebindCanvases(): void {
+    this.clearHoverPreview();
     this.unbindCanvases();
 
     for (const pageView of this.renderer.getAllPageViews()) {
@@ -263,23 +288,50 @@ export class DemoApp {
       b.canvas.removeEventListener('pointerdown', b.onDown);
       b.canvas.removeEventListener('pointermove', b.onMove);
       b.canvas.removeEventListener('pointerup', b.onUp);
+      b.container.removeEventListener('pointerdown', b.onSelectDown, true);
+      b.container.removeEventListener('pointermove', b.onSelectMove, true);
+      b.container.removeEventListener('pointerleave', b.onSelectLeave, true);
     }
     this.bindings = [];
   }
 
   private bindCanvas(pageView: PageView): void {
     const canvas = pageView.annotationCanvas;
+    const container = pageView.container;
     const pageNumber = pageView.pageNumber;
 
     const onDown = (e: PointerEvent) => this.handlePointerDown(e, pageView);
     const onMove = (e: PointerEvent) => this.handlePointerMove(e, pageView);
     const onUp = (e: PointerEvent) => this.handlePointerUp(e, pageView);
 
+    // Select must listen on the page container in capture phase. Text glyphs
+    // and freetext editors are sibling/overlay DOM elements above the canvas,
+    // so a canvas listener alone cannot intercept their pointerdown.
+    const onSelectDown = (e: PointerEvent) =>
+      this.handleSelectPointerDown(e);
+    const onSelectMove = (e: PointerEvent) =>
+      this.handleSelectPointerMove(e);
+    const onSelectLeave = (e: PointerEvent) =>
+      this.handleSelectPointerLeave(e, pageNumber);
+
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
+    container.addEventListener('pointerdown', onSelectDown, true);
+    container.addEventListener('pointermove', onSelectMove, true);
+    container.addEventListener('pointerleave', onSelectLeave, true);
 
-    this.bindings.push({ canvas, pageNumber, onDown, onMove, onUp });
+    this.bindings.push({
+      canvas,
+      container,
+      pageNumber,
+      onDown,
+      onMove,
+      onUp,
+      onSelectDown,
+      onSelectMove,
+      onSelectLeave,
+    });
   }
 
   // ----- Pointer coordinate helpers -----
@@ -311,6 +363,79 @@ export class DemoApp {
       x: (e.clientX - rect.left) / rect.width,
       y: (e.clientY - rect.top) / rect.height,
     };
+  }
+
+  // ----- Select hit handling -----
+
+  private handleSelectPointerMove(e: PointerEvent): void {
+    if (this.currentTool !== 'select') return;
+
+    const result = this.hitTester.hitTest(e.clientX, e.clientY);
+    const nextId = result?.hit?.id ?? null;
+    const nextPageNumber = result?.hit ? result.pageNumber : null;
+
+    if (
+      nextId === this.hoveredId &&
+      nextPageNumber === this.hoveredPageNumber
+    ) {
+      return;
+    }
+
+    const previousPageNumber = this.hoveredPageNumber;
+    this.hoveredId = nextId;
+    this.hoveredPageNumber = nextPageNumber;
+
+    if (previousPageNumber !== null) {
+      this.renderAnnotationsForPage(previousPageNumber);
+    }
+    if (
+      nextPageNumber !== null &&
+      nextPageNumber !== previousPageNumber
+    ) {
+      this.renderAnnotationsForPage(nextPageNumber);
+    }
+  }
+
+  private handleSelectPointerLeave(
+    _e: PointerEvent,
+    pageNumber: number
+  ): void {
+    if (
+      this.currentTool === 'select' &&
+      this.hoveredPageNumber === pageNumber
+    ) {
+      this.clearHoverPreview();
+    }
+  }
+
+  private handleSelectPointerDown(e: PointerEvent): void {
+    if (this.currentTool !== 'select') return;
+
+    const result = this.hitTester.hitTest(e.clientX, e.clientY);
+    this.selectedId = result?.hit?.id ?? null;
+    this.renderAllPages();
+
+    if (!result?.hit) {
+      // Keep native PDF text selection available when no annotation was hit.
+      return;
+    }
+
+    // The annotation has priority over the PDF text layer. This handler runs
+    // in capture phase, before a text glyph or freetext editor can start its
+    // own selection/editing gesture.
+    e.preventDefault();
+    e.stopPropagation();
+    window.getSelection()?.removeAllRanges();
+  }
+
+  private clearHoverPreview(): void {
+    const previousPageNumber = this.hoveredPageNumber;
+    this.hoveredId = null;
+    this.hoveredPageNumber = null;
+
+    if (previousPageNumber !== null) {
+      this.renderAnnotationsForPage(previousPageNumber);
+    }
   }
 
   // ----- Pointer dispatch -----
@@ -460,9 +585,10 @@ export class DemoApp {
 
     const w = pageView.annotationCanvas.width;
     const h = pageView.annotationCanvas.height;
+    const pageObjects = this.store.getForPage(pageNumber);
     ctx.clearRect(0, 0, w, h);
 
-    for (const obj of this.store.getForPage(pageNumber)) {
+    for (const obj of pageObjects) {
       try {
         obj.render(ctx, w, h);
       } catch (err) {
@@ -470,11 +596,23 @@ export class DemoApp {
       }
     }
 
+    // Draw a lightweight hover preview before the stronger selected outline.
+    if (this.hoveredId && this.hoveredId !== this.selectedId) {
+      const hovered = pageObjects.find((o) => o.id === this.hoveredId);
+      if (hovered) {
+        const b = hovered.getBounds();
+        ctx.save();
+        ctx.strokeStyle = 'rgba(37, 99, 235, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(b.x * w, b.y * h, b.width * w, b.height * h);
+        ctx.restore();
+      }
+    }
+
     // Draw a selection outline around the currently selected annotation.
     if (this.selectedId) {
-      const selected = this.store
-        .getForPage(pageNumber)
-        .find((o) => o.id === this.selectedId);
+      const selected = pageObjects.find((o) => o.id === this.selectedId);
       if (selected) {
         const b = selected.getBounds();
         ctx.save();
@@ -484,6 +622,20 @@ export class DemoApp {
         ctx.strokeRect(b.x * w, b.y * h, b.width * w, b.height * h);
         ctx.restore();
       }
+    }
+
+    // FreeText is rendered in a DOM overlay rather than this canvas, so mirror
+    // the select state as classes on its editor element as well.
+    const editors = pageView.container.querySelectorAll<HTMLElement>(
+      '.freetext-editor'
+    );
+    for (const editor of editors) {
+      const id = editor.getAttribute('data-editor-id');
+      editor.classList.toggle(
+        'annotation-hovered',
+        this.currentTool === 'select' && id === this.hoveredId
+      );
+      editor.classList.toggle('annotation-selected', id === this.selectedId);
     }
   }
 

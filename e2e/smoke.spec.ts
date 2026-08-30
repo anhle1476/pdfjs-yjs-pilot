@@ -157,6 +157,110 @@ test('text-mode highlight: selecting text with the highlight tool persists a hig
     .toBeGreaterThan(beforeHighlights);
 });
 
+test('select tool prioritizes annotation hits over PDF text selection', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.locator('#loading-text')).toBeHidden({ timeout: 45_000 });
+
+  const pageView = page.locator('.page-view').first();
+  await expect(pageView).toBeVisible({ timeout: 45_000 });
+  const spans = pageView.locator('.text-layer span');
+  const firstSpan = spans.first();
+  await expect(firstSpan).toBeVisible({ timeout: 30_000 });
+
+  // Create a text highlight whose bounds cover the first text glyphs.
+  await page.locator('.tool-btn[data-tool="highlight"]').click();
+  await page.locator('.hl-mode-btn[data-hl-mode="text"]').click();
+  const beforeHighlights = await annotationCountOfType(page, 'highlight');
+  const count = await spans.count();
+  const startBox = await spans.nth(0).boundingBox();
+  const endBox = await spans.nth(Math.min(3, count - 1)).boundingBox();
+  expect(startBox).not.toBeNull();
+  expect(endBox).not.toBeNull();
+
+  await page.mouse.move(startBox!.x + 2, startBox!.y + startBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    endBox!.x + endBox!.width - 2,
+    endBox!.y + endBox!.height / 2,
+    { steps: 6 }
+  );
+  await page.mouse.up();
+
+  await expect
+    .poll(() => annotationCountOfType(page, 'highlight'), { timeout: 10_000 })
+    .toBeGreaterThan(beforeHighlights);
+
+  await page.locator('.tool-btn[data-tool="select"]').click();
+  await expect(page.locator('.tool-btn[data-tool="select"]')).toHaveClass(
+    /active/
+  );
+
+  // Hover is resolved at the page container capture layer even though the
+  // pointer is over a PDF text glyph above the annotation canvas.
+  const hitPoint = await firstSpan.boundingBox();
+  expect(hitPoint).not.toBeNull();
+  const x = hitPoint!.x + hitPoint!.width / 2;
+  const y = hitPoint!.y + hitPoint!.height / 2;
+
+  await page.mouse.move(x, y);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__demoApp?.getHoveredId?.()))
+    .toBeTruthy();
+
+  // Text-mode selection may create one highlight per client rect, so the
+  // newest annotation is not necessarily the one under the first glyph.
+  // Capture the annotation resolved by the actual hover event.
+  const highlightId = await page.evaluate(() => {
+    const app = (window as any).__demoApp;
+    const id = app?.getHoveredId?.() ?? null;
+    const sync = (window as any).__pdfSync;
+    const annotation = (sync?.get?.() ?? []).find(
+      (candidate: any) => candidate?.id === id
+    );
+    return annotation?.type === 'highlight' ? id : null;
+  });
+  expect(highlightId).toBeTruthy();
+
+  // The annotation must win on pointerdown and native text selection must
+  // remain empty.
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__demoApp?.getSelectedId?.()))
+    .toBe(highlightId);
+  expect(
+    await page.evaluate(() => window.getSelection()?.toString() ?? '')
+  ).toBe('');
+
+  // A text drag outside the annotation still uses native PDF text selection.
+  const missStartIndex = Math.min(6, count - 2);
+  const missEndIndex = Math.min(missStartIndex + 2, count - 1);
+  const missStart = await spans.nth(missStartIndex).boundingBox();
+  const missEnd = await spans.nth(missEndIndex).boundingBox();
+  expect(missStart).not.toBeNull();
+  expect(missEnd).not.toBeNull();
+  await page.mouse.move(
+    missStart!.x + 2,
+    missStart!.y + missStart!.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    missEnd!.x + missEnd!.width - 2,
+    missEnd!.y + missEnd!.height / 2,
+    { steps: 6 }
+  );
+  await page.mouse.up();
+
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .not.toBe('');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__demoApp?.getSelectedId?.()))
+    .toBeNull();
+});
+
 test('multi-tool: ink, box highlight, and freetext all persist together', async ({
   page,
 }) => {
