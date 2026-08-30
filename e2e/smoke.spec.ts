@@ -450,6 +450,16 @@ test('Bug2: freetext keeps focus while typing multiple characters', async ({
 
   const pageView = page.locator('.page-view').first();
   await expect(pageView).toBeVisible({ timeout: 45_000 });
+  // Wait until the app is fully wired and page 1's text layer has rendered, so
+  // background virtualization work has settled before we start editing.
+  await expect
+    .poll(() => page.evaluate(() => Boolean((window as any).__demoApp)), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  await expect(pageView.locator('.text-layer span').first()).toBeVisible({
+    timeout: 30_000,
+  });
   const canvas = pageView.locator('canvas').last();
   const box = (await canvas.boundingBox())!;
 
@@ -458,6 +468,17 @@ test('Bug2: freetext keeps focus while typing multiple characters', async ({
 
   const editorContent = page.locator('.freetext-editor.editing .editor-content');
   await expect(editorContent).toBeVisible({ timeout: 10_000 });
+  // The editor focuses asynchronously after creation; wait until it actually
+  // holds focus before typing so the first character is not lost to a focus
+  // that lands mid-keystroke. This asserts the real precondition (editor
+  // focused) rather than the merely-visible state.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document.activeElement?.classList.contains('editor-content')
+      )
+    )
+    .toBe(true);
 
   // Type char-by-char with a delay; the editor must NOT be rebuilt/lose focus
   // after the first character.
@@ -476,6 +497,13 @@ test('Bug3: single(page2) -> scroll renders one ordered 1..N sequence', async ({
   await expect(page.locator('.page-view').first()).toBeVisible({
     timeout: 45_000,
   });
+  // With virtualization the page-view placeholders become visible before the
+  // app test hook is wired up; wait for it before reading __demoApp.
+  await expect
+    .poll(() => page.evaluate(() => Boolean((window as any).__demoApp)), {
+      timeout: 15_000,
+    })
+    .toBe(true);
 
   const total = await page.evaluate(() => {
     const app = (window as any).__demoApp;

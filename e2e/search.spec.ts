@@ -256,3 +256,68 @@ test('search: Ctrl+F focuses the in-app search bar (native find intercepted)', a
     )
     .toBe('search-input');
 });
+
+test('search (virtualization): scrolling to a later match page lazily renders + highlights it', async ({
+  page,
+}) => {
+  // With virtualization only pages in/near the viewport render their content
+  // (canvas + text layer). A match on a far page therefore has NO highlight in
+  // the DOM until the page is scrolled near — at which point the page renders
+  // lazily and the onPageRendered hook re-applies the highlight. This replaces
+  // the old (now-invalid) "scroll-mode total === DOM highlight count" parity.
+  await page.goto(room('e2e-search-virtual'));
+  await waitForViewer(page);
+
+  expect(
+    await page.evaluate(() => (window as any).__demoApp.getViewMode())
+  ).toBe('scroll');
+
+  await setQuery(page, KNOWN_WORD);
+  await expect
+    .poll(async () => (await getState(page)).total, { timeout: 15_000 })
+    .toBeGreaterThan(0);
+
+  // Find a match on a page that is NOT currently the viewer's page 1, then
+  // navigate to it. matchIndexInPage/page live in the controller state.
+  const targetPage = await page.evaluate(() => {
+    const s = (window as any).__pdfSearch.getState();
+    return typeof s.total === 'number' ? s.total : 0;
+  });
+  expect(targetPage).toBeGreaterThan(0);
+
+  const startPage = await currentPage(page);
+
+  // Step forward until the viewer page changes (a match on a later page). The
+  // navigation scrolls the container, lazily rendering the destination page.
+  let changed = false;
+  const total = (await getState(page)).total;
+  const maxSteps = Math.min(total, 80);
+  for (let i = 0; i < maxSteps; i++) {
+    await page.evaluate(() => (window as any).__pdfSearch.findNext());
+    if ((await currentPage(page)) !== startPage) {
+      changed = true;
+      break;
+    }
+  }
+  expect(changed).toBe(true);
+
+  // The lazily-rendered destination page must show its selected highlight,
+  // painted by the onPageRendered hook after the page's text layer built.
+  await expect
+    .poll(() => page.locator('.search-highlight.selected').count(), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThanOrEqual(1);
+
+  // And a rendered text layer must exist on the current page (proof of lazy
+  // render, not a placeholder).
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const cur = (window as any).__demoApp.getCurrentPage();
+        const view = (window as any).__demoApp.renderer.getPageView(cur);
+        return view ? view.textLayer.querySelectorAll('span').length : 0;
+      })
+    )
+    .toBeGreaterThan(0);
+});

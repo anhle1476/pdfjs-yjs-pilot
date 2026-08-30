@@ -282,6 +282,15 @@ html, body {
   background-color: white;
   position: relative;
   margin: 20px auto;
+  /* Let the browser skip layout/paint for offscreen pages. The wrapper always
+     has an explicit inline width/height (set by PageController per scale), so
+     content-visibility:auto never collapses the box — the intrinsic-size hint
+     below is a fallback for the brief moment before the inline size applies.
+     This complements the IntersectionObserver virtualization and does not
+     affect the --total-scale-factor glyph sizing or search-highlight markup,
+     which live on the .text-layer child. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
 }
 
 #viewer-container canvas {

@@ -203,6 +203,17 @@ export class PdfRenderer {
     return this.navigationController?.onViewModeChange(callback) ?? (() => {});
   }
 
+  /**
+   * Subscribe to per-page render completion (lazy scroll render + in-place
+   * zoom/rotation re-raster of visible pages). The host uses this to (re)bind
+   * a newly-rendered page's canvas and (re)apply annotations / search
+   * highlights for that page — required for correctness with virtualization,
+   * where pages far from the viewport are placeholders until scrolled near.
+   */
+  public onPageRendered(callback: (pageNumber: number) => void): () => void {
+    return this.pageController?.onPageRendered(callback) ?? (() => {});
+  }
+
   // ----- Coordinate helpers (NEW) -----
 
   /**

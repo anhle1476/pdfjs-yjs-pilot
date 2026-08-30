@@ -234,6 +234,30 @@ export class DemoApp {
       void this.reapplySearchHighlights();
       this.options.onViewModeChange?.(mode);
     });
+
+    // Virtualization hook: pages far from the viewport are placeholders until
+    // scrolled near, at which point PageController renders their content and
+    // fires this callback. Re-bind that page's annotation canvas and re-apply
+    // its committed annotations + search highlights so a lazily-rendered page
+    // looks identical to an eagerly-rendered one. This is the ONLY DemoApp
+    // change required for correctness with virtualization.
+    this.renderer.onPageRendered((pageNumber) => {
+      const pageView = this.renderer.getPageView(pageNumber);
+      if (!pageView) return;
+      this.rebindCanvas(pageView);
+      pageView.textLayer.classList.toggle(
+        'drawing-active',
+        this.isDrawingActive()
+      );
+      // NOTE: we deliberately do NOT (re)activate freetext editors here.
+      // Freetext editor lifecycle is driven by navigation / view-mode / zoom
+      // changes (which recreate the wrapper); a lazy CONTENT render keeps the
+      // same wrapper, so its editors persist. Rebuilding editors from this
+      // (frequently-firing) hook would tear down a focused editor mid-type and
+      // drop keystrokes — the same hazard the store-subscribe path avoids.
+      this.renderAnnotationsForPage(pageNumber);
+      void this.reapplySearchHighlightsForPage(pageNumber);
+    });
   }
 
   /**
@@ -264,6 +288,25 @@ export class DemoApp {
       if (token !== this.searchHighlightToken) return;
     }
     this.searchHighlighter.scrollSelectedIntoView();
+  }
+
+  /**
+   * Re-apply search highlights for a SINGLE page that was just (lazily)
+   * rendered by the virtualizer. The page's text layer has just been built, so
+   * wait a frame for glyph spans then paint just this page. If it holds the
+   * selected match, scroll it into view.
+   */
+  private async reapplySearchHighlightsForPage(pageNumber: number): Promise<void> {
+    const state = this.search.getState();
+    if (state.total === 0) return;
+    await this.nextFrame();
+    const view = this.renderer.getPageView(pageNumber);
+    if (!view || !view.rendered) return;
+    await this.searchHighlighter.highlightPage(pageNumber);
+    const selected = this.search.getSelectedMatch?.();
+    if (selected && selected.pageNumber === pageNumber) {
+      this.searchHighlighter.scrollSelectedIntoView();
+    }
   }
 
   private hasRenderedHighlight(): boolean {
@@ -386,10 +429,7 @@ export class DemoApp {
    * the document mouseup selection listener).
    */
   private updateCanvasInteractivity(): void {
-    const drawingActive =
-      this.currentTool === 'ink' ||
-      this.currentTool === 'freetext' ||
-      (this.currentTool === 'highlight' && this.highlightTool.mode !== 'text');
+    const drawingActive = this.isDrawingActive();
 
     for (const { canvas } of this.bindings) {
       // The annotation canvas always receives pointer events; freetext editor
@@ -400,6 +440,14 @@ export class DemoApp {
     for (const pageView of this.renderer.getAllPageViews()) {
       pageView.textLayer.classList.toggle('drawing-active', drawingActive);
     }
+  }
+
+  private isDrawingActive(): boolean {
+    return (
+      this.currentTool === 'ink' ||
+      this.currentTool === 'freetext' ||
+      (this.currentTool === 'highlight' && this.highlightTool.mode !== 'text')
+    );
   }
 
   // ----- Canvas binding -----
@@ -430,11 +478,33 @@ export class DemoApp {
     this.bindings = [];
   }
 
+  /**
+   * (Re)bind a single page's canvas. Removes any prior binding for the same
+   * page first so lazily-rendered pages (virtualization) can be re-bound
+   * without duplicating listeners. Used by the onPageRendered hook.
+   */
+  private rebindCanvas(pageView: PageView): void {
+    const existing = this.bindings.filter(
+      (b) => b.pageNumber === pageView.pageNumber
+    );
+    for (const b of existing) {
+      b.canvas.removeEventListener('pointerdown', b.onDown);
+      b.canvas.removeEventListener('pointermove', b.onMove);
+      b.canvas.removeEventListener('pointerup', b.onUp);
+      b.container.removeEventListener('pointerdown', b.onSelectDown, true);
+      b.container.removeEventListener('pointermove', b.onSelectMove, true);
+      b.container.removeEventListener('pointerleave', b.onSelectLeave, true);
+    }
+    this.bindings = this.bindings.filter(
+      (b) => b.pageNumber !== pageView.pageNumber
+    );
+    this.bindCanvas(pageView);
+  }
+
   private bindCanvas(pageView: PageView): void {
     const canvas = pageView.annotationCanvas;
     const container = pageView.container;
     const pageNumber = pageView.pageNumber;
-
     const onDown = (e: PointerEvent) => this.handlePointerDown(e, pageView);
     const onMove = (e: PointerEvent) => this.handlePointerMove(e, pageView);
     const onUp = (e: PointerEvent) => this.handlePointerUp(e, pageView);

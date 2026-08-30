@@ -9,6 +9,14 @@ async function waitForLoaded(page: Page): Promise<void> {
   await expect(page.locator('.page-view').first()).toBeVisible({
     timeout: 45_000,
   });
+  // The app test hook + default tool are wired up once the document has fully
+  // loaded. With virtualization the page-view placeholders become visible
+  // before that, so wait for the hook before interacting with the toolbar.
+  await expect
+    .poll(() => page.evaluate(() => Boolean((window as any).__demoApp)), {
+      timeout: 15_000,
+    })
+    .toBe(true);
 }
 
 async function dispatchTouchMove(
