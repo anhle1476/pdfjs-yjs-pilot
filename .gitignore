@@ -32,3 +32,12 @@ node_modules/.vite/
 tmp/
 temp/
 build/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Reference-only clone of mozilla/pdf.js used for research, not part of this project
+context/

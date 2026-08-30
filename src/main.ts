@@ -140,6 +140,11 @@ async function main(): Promise<void> {
 
   const initialAnnotations = sync.get() as Annotation[];
   pdfPilot.loadAnnotations(initialAnnotations);
+
+  // Test hook: expose sync + pdfPilot so e2e tests can inspect annotation state.
+  // Harmless in production; only used by Playwright smoke tests.
+  (window as any).__pdfPilot = pdfPilot;
+  (window as any).__pdfSync = sync;
 }
 
 window.addEventListener('unhandledrejection', event => {

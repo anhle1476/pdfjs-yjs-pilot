@@ -1,8 +1,14 @@
 import * as pdfjsLib from 'pdfjs-dist';
+// Bundle the worker that ships with the installed pdfjs-dist so the worker
+// version always matches the API version. Loading it from a CDN with a
+// version range (e.g. @^5.5.207) can resolve to a newer worker and cause a
+// "The API version X does not match the Worker version Y" runtime error.
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { InkPlugin } from './plugins/InkPlugin';
 import { HighlightPlugin } from './plugins/HighlightPlugin';
 import { FreeTextPlugin } from './plugins/FreeTextPlugin';
 import { AnnotationObject } from './plugins/IToolPlugin';
+import { AnnotationPluginManager } from './plugins/AnnotationPluginManager';
 import { InkObject } from './models/InkObject';
 import { HighlightObject } from './models/HighlightObject';
 import { FreeTextObject } from './models/FreeTextObject';
@@ -43,6 +49,7 @@ export class PdfPilot {
   private inkPlugin: InkPlugin;
   private highlightPlugin: HighlightPlugin;
   private freeTextPlugin: FreeTextPlugin;
+  private pluginManager: AnnotationPluginManager | null = null;
   private options: PdfPilotOptions;
   private syncUnsubscribe: (() => void) | null = null;
 
@@ -59,8 +66,7 @@ export class PdfPilot {
     });
 
     pdfjsLib.GlobalWorkerOptions.workerSrc =
-      options.workerSrc ||
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@^5.5.207/build/pdf.worker.min.mjs';
+      options.workerSrc || pdfWorkerUrl;
   }
 
   public async loadDocument(url: string): Promise<void> {
@@ -132,6 +138,41 @@ export class PdfPilot {
     this.currentToolManager = this.toolManager;
   }
 
+  /**
+   * Lazily build the AnnotationPluginManager with the registered plugins.
+   * Registration order (ink, highlight, freetext) matches the activation order
+   * used by setupAnnotationPluginsForCurrentPage(). Highlight/FreeText activate
+   * with a 2D context; Ink activates with the canvas only.
+   */
+  private getPluginManager(): AnnotationPluginManager {
+    if (!this.pluginManager) {
+      this.pluginManager = new AnnotationPluginManager(
+        [
+          {
+            plugin: this.inkPlugin,
+            needsContext: false,
+            beforeActivate: (p) => p.deactivate(),
+          },
+          {
+            plugin: this.highlightPlugin,
+            needsContext: true,
+            beforeActivate: () => {
+              // Default to text mode for highlighting.
+              this.highlightPlugin.mode = 'text';
+            },
+          },
+          {
+            plugin: this.freeTextPlugin,
+            needsContext: true,
+            beforeActivate: (p) => p.deactivate(),
+          },
+        ],
+        () => this.renderAnnotationsForCurrentPage()
+      );
+    }
+    return this.pluginManager;
+  }
+
   private setupAnnotationPlugins(): void {
     const currentPageView = this.pageController?.getCurrentPageView();
     if (!currentPageView) return;
@@ -139,62 +180,11 @@ export class PdfPilot {
     const ctx = currentPageView.annotationCanvas.getContext('2d');
     if (!ctx) return;
 
-    this.inkPlugin.setPageNumber(this.currentPageNumber);
-    this.inkPlugin.activate(currentPageView.annotationCanvas);
-    this.inkPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.inkPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        (draft as Annotation[]).push(obj.serialize());
-      });
-    };
-
-    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
-    this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
-    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.freeTextPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        if (!annotations.some(a => a.id === obj.id)) {
-          annotations.push(obj.serialize());
-        }
-      });
-    };
-    this.freeTextPlugin.onObjectUpdated = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        const idx = annotations.findIndex(a => a.id === obj.id);
-        if (idx !== -1) {
-          annotations[idx] = obj.serialize();
-        }
-      });
-    };
-    this.freeTextPlugin.onObjectDeleted = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        const idx = annotations.findIndex(a => a.id === obj.id);
-        if (idx !== -1) {
-          annotations.splice(idx, 1);
-        }
-      });
-    };
-
-    this.highlightPlugin.setPageNumber(this.currentPageNumber);
-    this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
-    this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.highlightPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        (draft as Annotation[]).push(obj.serialize());
-      });
-    };
-
-    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
-    this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
-    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.freeTextPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        (draft as Annotation[]).push(obj.serialize());
-      });
-    };
+    this.getPluginManager().activateAll(
+      currentPageView.annotationCanvas,
+      ctx,
+      this.currentPageNumber
+    );
 
     this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
     this.setupSyncSubscription();
@@ -204,61 +194,14 @@ export class PdfPilot {
     const currentPageView = this.pageController?.getCurrentPageView();
     if (!currentPageView) return;
 
-    this.inkPlugin.setPageNumber(this.currentPageNumber);
-    this.inkPlugin.deactivate();
-    this.inkPlugin.activate(currentPageView.annotationCanvas);
-    this.inkPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.inkPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        (draft as Annotation[]).push(obj.serialize());
-      });
-    };
-
-    this.highlightPlugin.setPageNumber(this.currentPageNumber);
     const ctx = currentPageView.annotationCanvas.getContext('2d');
-    if (ctx) {
-      this.highlightPlugin.activate(currentPageView.annotationCanvas, ctx);
-    }
-    this.highlightPlugin.mode = 'text'; // Default to text mode for highlighting
-    this.highlightPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.highlightPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        (draft as Annotation[]).push(obj.serialize());
-      });
-    };
+    if (!ctx) return;
 
-    this.freeTextPlugin.setPageNumber(this.currentPageNumber);
-    this.freeTextPlugin.deactivate();
-    if (ctx) {
-      this.freeTextPlugin.activate(currentPageView.annotationCanvas, ctx);
-    }
-    this.freeTextPlugin.onRenderNeeded = () => this.renderAnnotationsForCurrentPage();
-    this.freeTextPlugin.onObjectCreated = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        if (!annotations.some(a => a.id === obj.id)) {
-          annotations.push(obj.serialize());
-        }
-      });
-    };
-    this.freeTextPlugin.onObjectUpdated = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        const idx = annotations.findIndex(a => a.id === obj.id);
-        if (idx !== -1) {
-          annotations[idx] = obj.serialize();
-        }
-      });
-    };
-    this.freeTextPlugin.onObjectDeleted = (obj) => {
-      sync.update((draft: unknown) => {
-        const annotations = draft as Annotation[];
-        const idx = annotations.findIndex(a => a.id === obj.id);
-        if (idx !== -1) {
-          annotations.splice(idx, 1);
-        }
-      });
-    };
+    this.getPluginManager().activateAll(
+      currentPageView.annotationCanvas,
+      ctx,
+      this.currentPageNumber
+    );
 
     this.setupAnnotationEventListeners(currentPageView.annotationCanvas);
     this.renderAnnotationsForCurrentPage();
