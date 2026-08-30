@@ -60,6 +60,12 @@ export class PageController {
   private async renderAllPages(): Promise<void> {
     if (!this.pdfDoc) return;
 
+    // Rebuilding must be idempotent: clear any pages left over from a prior
+    // view (e.g. the single page-2 node when switching single->scroll) so we
+    // render exactly one ordered sequence 1..N. Mirrors renderVisiblePages.
+    this.container.innerHTML = '';
+    this.pageViews.clear();
+
     const fragment = document.createDocumentFragment();
 
     for (let pageNum = 1; pageNum <= this.pdfDoc.numPages; pageNum++) {

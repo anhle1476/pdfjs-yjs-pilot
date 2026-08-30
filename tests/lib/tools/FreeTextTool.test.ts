@@ -79,4 +79,45 @@ describe('FreeTextTool', () => {
     tool.activate(pageContainer, 1);
     expect(pageContainer.querySelector('[data-editor-id="ft-p2"]')).toBeNull();
   });
+
+  it('keeps the active editor focused after its first-character input (Bug 2)', () => {
+    const { store, tool, pageContainer } = makeTool();
+    tool.activate(pageContainer, 1);
+
+    const id = tool.createAt(0.25, 0.4);
+    const editorEl = pageContainer.querySelector(`[data-editor-id="${id}"]`)!;
+    const contentDiv = editorEl.querySelector('.editor-content') as HTMLDivElement;
+
+    // Simulate the user typing the first character then the input event which
+    // triggers store.update (and, in the app, the synchronous Yjs observer).
+    contentDiv.focus();
+    contentDiv.textContent = 'H';
+    contentDiv.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Emulate the store subscription firing (renderAllPages) plus a same-page
+    // setPageNumber call — neither must tear down the active editor.
+    tool.setPageNumber(1);
+
+    // Same live editor node still present and still the active editor.
+    const stillThere = pageContainer.querySelector(`[data-editor-id="${id}"]`);
+    expect(stillThere).toBe(editorEl);
+    expect(tool.getActiveEditorId()).toBe(id);
+    // Content preserved and store updated with the first character.
+    expect((stillThere!.querySelector('.editor-content') as HTMLDivElement).textContent).toBe('H');
+    const stored = store.getAll().find((o) => o.id === id) as FreeTextObject;
+    expect(stored.getContent()).toBe('H');
+  });
+
+  it('setPageNumber with the same page is a no-op (preserves active editor DOM)', () => {
+    const { tool, pageContainer } = makeTool();
+    tool.activate(pageContainer, 1);
+    const id = tool.createAt(0.1, 0.1);
+    const before = pageContainer.querySelector(`[data-editor-id="${id}"]`);
+
+    tool.setPageNumber(1);
+
+    const after = pageContainer.querySelector(`[data-editor-id="${id}"]`);
+    expect(after).toBe(before); // same node, not rebuilt
+    expect(tool.getActiveEditorId()).toBe(id);
+  });
 });

@@ -31,7 +31,7 @@ describe('HighlightTool', () => {
     expect(store.getForPage(3)).toHaveLength(1);
   });
 
-  it('createFromBoxes builds an outlined highlight and persists it', () => {
+  it('createFromBoxes stores normalized union bounds and persists it', () => {
     const { store, tool } = makeTool('box');
     const obj = tool.createFromBoxes(
       2,
@@ -42,8 +42,71 @@ describe('HighlightTool', () => {
 
     expect(obj).toBeInstanceOf(HighlightObject);
     expect(obj!.pageNumber).toBe(2);
-    expect(obj!.svgPath).toBeTruthy();
+    // Bounds equal the normalized input rect (no pixel-space outliner).
+    expect(obj!.bounds.x).toBeCloseTo(0.1);
+    expect(obj!.bounds.y).toBeCloseTo(0.1);
+    expect(obj!.bounds.width).toBeCloseTo(0.3);
+    expect(obj!.bounds.height).toBeCloseTo(0.1);
+    // No svgPath/paths → render uses the normalized fillRect fallback.
+    expect(obj!.svgPath).toBe('');
+    expect(obj!.paths).toHaveLength(0);
     expect(store.getForPage(2)).toHaveLength(1);
+  });
+
+  it('createFromBoxes unions multiple rects into one bounds', () => {
+    const { tool } = makeTool('box');
+    const obj = tool.createFromBoxes(
+      1,
+      [
+        { x: 0.1, y: 0.1, width: 0.2, height: 0.1 },
+        { x: 0.5, y: 0.4, width: 0.2, height: 0.1 },
+      ],
+      1000,
+      800
+    );
+    expect(obj!.bounds.x).toBeCloseTo(0.1);
+    expect(obj!.bounds.y).toBeCloseTo(0.1);
+    expect(obj!.bounds.width).toBeCloseTo(0.6); // 0.7 - 0.1
+    expect(obj!.bounds.height).toBeCloseTo(0.4); // 0.5 - 0.1
+  });
+
+  it('createFromBoxes result paints a non-zero area on a canvas ctx', () => {
+    const { tool } = makeTool('box');
+    const obj = tool.createFromBoxes(
+      2,
+      [{ x: 0.1, y: 0.1, width: 0.3, height: 0.1 }],
+      1000,
+      800
+    );
+
+    // Record fillRect calls on a mock 2D context.
+    const calls: Array<[number, number, number, number]> = [];
+    const ctx = {
+      save() {},
+      restore() {},
+      translate() {},
+      scale() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      closePath() {},
+      fill() {},
+      fillRect(x: number, y: number, w: number, h: number) {
+        calls.push([x, y, w, h]);
+      },
+      set fillStyle(_v: string) {},
+      set globalAlpha(_v: number) {},
+    } as unknown as CanvasRenderingContext2D;
+
+    obj!.render(ctx, 1000, 800);
+    expect(calls).toHaveLength(1);
+    const [x, y, w, h] = calls[0];
+    // Pixel-space fill = normalized bounds * canvas dims.
+    expect(x).toBeCloseTo(100);
+    expect(y).toBeCloseTo(80);
+    expect(w).toBeCloseTo(300);
+    expect(h).toBeCloseTo(80);
+    expect(w * h).toBeGreaterThan(0);
   });
 
   it('createFromBoxes returns null for empty box list', () => {

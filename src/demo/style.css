@@ -239,6 +239,18 @@ html, body {
   pointer-events: none;
 }
 
+/*
+ * When a drawing tool is active (ink / free / box highlight), the host app
+ * adds `drawing-active` to the text layer. This disables pointer input on the
+ * glyph spans so drags that begin over text reach the annotation canvas
+ * instead of starting a text selection. Select/neutral tools and highlight
+ * text-mode leave the class off, keeping text selectable.
+ */
+.text-layer.drawing-active,
+.text-layer.drawing-active span {
+  pointer-events: none;
+}
+
 ::selection {
   background: rgba(0, 0, 255, 0.3);
 }

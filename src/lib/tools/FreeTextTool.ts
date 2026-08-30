@@ -75,11 +75,14 @@ export class FreeTextTool {
   }
 
   public setPageNumber(pageNumber: number): void {
-    if (this.currentPageNumber !== pageNumber) {
-      this.commitActiveEditor();
-      this.currentPageNumber = pageNumber;
-      this.activeEditorId = null;
+    // No-op when the page is unchanged: rebuilding editors here would remove
+    // the currently-focused editor (e.g. right after its first keystroke).
+    if (this.currentPageNumber === pageNumber) {
+      return;
     }
+    this.commitActiveEditor();
+    this.currentPageNumber = pageNumber;
+    this.activeEditorId = null;
     this.rebuildEditorsForCurrentPage();
     this.notify();
   }
@@ -257,6 +260,27 @@ export class FreeTextTool {
     editorEl.classList.add('editing');
     overlayDiv.classList.remove('enabled');
 
+    // While editing, pointer/mouse events must NOT bubble to the annotation
+    // canvas / viewer handlers (which would create a new editor or start a
+    // drawing stroke). We stop propagation but intentionally do NOT
+    // preventDefault, so caret placement, text selection, and native
+    // clipboard behaviour inside the editor keep working. Keyboard events are
+    // left untouched so typing and Ctrl/Cmd+C/V/X shortcuts function normally;
+    // commit shortcuts are handled in handleKeyDown.
+    const stopPointer = (ev: Event) => {
+      ev.stopPropagation();
+    };
+    for (const type of [
+      'pointerdown',
+      'pointerup',
+      'pointermove',
+      'mousedown',
+      'mouseup',
+      'click',
+    ]) {
+      editorEl.addEventListener(type, stopPointer, { signal });
+    }
+
     setTimeout(() => {
       contentDiv.focus();
     }, 0);
@@ -426,9 +450,21 @@ export class FreeTextTool {
   private rebuildEditorsForCurrentPage(): void {
     if (!this.editorContainer) return;
 
-    // Remove ALL editors to ensure clean state for the current page.
+    // Preserve the currently-active (editing) editor if it belongs to the
+    // current page. Tearing it down mid-edit would drop focus and lose the
+    // in-progress text. We keep its live DOM node and only rebuild the rest.
+    const activeId = this.activeEditorId;
+    const activeBelongsToPage =
+      activeId != null &&
+      this.getObjectsForCurrentPage().some((o) => o.id === activeId);
+
     const editors = this.editorContainer.querySelectorAll('.freetext-editor');
     editors.forEach((el) => {
+      const id = el.getAttribute('data-editor-id');
+      if (activeBelongsToPage && id === activeId) {
+        // Keep the active editing editor's DOM intact.
+        return;
+      }
       if (el.parentNode) {
         el.remove();
       }
@@ -436,6 +472,8 @@ export class FreeTextTool {
 
     const pageObjects = this.getObjectsForCurrentPage();
     for (const obj of pageObjects) {
+      // Skip re-creating the preserved active editor.
+      if (activeBelongsToPage && obj.id === activeId) continue;
       this.rebuildEditor(obj);
     }
   }

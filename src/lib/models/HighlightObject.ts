@@ -103,6 +103,14 @@ export class HighlightObject extends AnnotationObject {
         return true;
       }
     }
+
+    // No svgPath and no polygons: this is a bounds-filled highlight (e.g. a
+    // box highlight rendered via fillRect(bounds)). The point already passed
+    // the bounding-box test above, so treat it as a hit — mirroring render().
+    if (!this.svgPath && this.paths.length === 0) {
+      return true;
+    }
+
     return false;
   }
 

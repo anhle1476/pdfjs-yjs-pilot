@@ -1,7 +1,7 @@
 import { AnnotationStore } from '../AnnotationStore';
 import { HighlightObject } from '../models/HighlightObject';
 import { Rect } from '../models/AnnotationObject';
-import { HighlightOutliner, FreeHighlightOutliner } from '../drawers/HighlightOutliner';
+import { FreeHighlightOutliner } from '../drawers/HighlightOutliner';
 
 export type HighlightMode = 'free' | 'box' | 'text';
 
@@ -62,6 +62,15 @@ export class HighlightTool {
 
   /**
    * Create a box-mode highlight from one or more normalized (0-1) rectangles.
+   *
+   * The stored HighlightObject keeps NO svgPath/paths: HighlightObject.render
+   * treats an empty path/svgPath as "fill the normalized bounds directly"
+   * (bounds.x * canvasWidth, ...), which matches the normalized preview drawn
+   * during the drag. The union of the supplied rects becomes the bounds.
+   *
+   * The pixel canvas dimensions are accepted for API symmetry with the
+   * freeform path but are not needed here because geometry stays normalized.
+   *
    * Returns the created HighlightObject, or null when the boxes are empty.
    */
   public createFromBoxes(
@@ -72,26 +81,36 @@ export class HighlightTool {
   ): HighlightObject | null {
     if (!boxes || boxes.length === 0) return null;
 
-    const outliner = new HighlightOutliner(boxes, 0.001, 0.001, true);
-    const highlightOutline = outliner.getOutlines();
+    // Union of all normalized rects.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const b of boxes) {
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.width);
+      maxY = Math.max(maxY, b.y + b.height);
+    }
+
+    const bounds: Rect = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
 
     const obj = new HighlightObject(
       `highlight_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-      [{ polygon: highlightOutline.outlines[0] || [] }],
+      [], // no polygon paths — render falls back to normalized fillRect(bounds)
       this.color,
       this.opacity,
-      {
-        x: highlightOutline.box[0],
-        y: highlightOutline.box[1],
-        width: highlightOutline.box[2],
-        height: highlightOutline.box[3],
-      },
+      bounds,
       undefined,
-      highlightOutline.toSVGPath(),
+      '', // no svgPath — keep the normalized bounds fill path in render()
       false
     );
     obj.pageNumber = pageNumber;
-    obj.setOutline(highlightOutline);
     this.store.add(obj);
     return obj;
   }

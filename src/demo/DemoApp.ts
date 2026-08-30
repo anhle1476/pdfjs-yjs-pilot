@@ -110,11 +110,15 @@ export class DemoApp {
     // Re-render committed annotations for every page.
     this.renderAllPages();
 
-    // Re-render (and rebuild freetext editors) when the shared doc changes,
-    // whether from local edits or remote peers.
+    // Re-render committed annotations when the shared doc changes, whether
+    // from local edits or remote peers. IMPORTANT: do NOT rebuild freetext
+    // editor DOM here. AnnotationStore.update runs inside doc.transact and the
+    // Yjs observer fires synchronously on commit, so rebuilding editors from
+    // this callback would tear down the very editor that produced the edit
+    // (losing focus after the first character). Editor lifecycle is driven by
+    // navigation / view / tool changes instead.
     this.storeUnsub = this.store.subscribe(() => {
       this.renderAllPages();
-      this.freeTextTool.setPageNumber(this.renderer.getCurrentPage());
     });
 
     // Text-mode highlight: when the highlight tool is active AND in text mode,
@@ -198,6 +202,8 @@ export class DemoApp {
    */
   public setHighlightMode(mode: HighlightMode): void {
     this.highlightTool.setMode(mode);
+    // Free/box modes must block text selection; text mode must allow it.
+    this.updateCanvasInteractivity();
   }
 
   public getHighlightMode(): HighlightMode {
@@ -208,11 +214,32 @@ export class DemoApp {
     return this.selectedId;
   }
 
+  /**
+   * Keep text-layer interactivity in sync with the active tool.
+   *
+   * When a drawing tool is active (ink, or highlight in free/box mode), the
+   * text-layer glyph spans must NOT intercept the drag — otherwise a drag that
+   * starts over text begins a text selection instead of reaching the
+   * annotation canvas below. We scope this by toggling a `drawing-active`
+   * class on each page's text layer; CSS then sets `pointer-events: none` on
+   * its spans. When a select/neutral tool or highlight text-mode is active the
+   * class is removed so text stays selectable (text-mode highlight relies on
+   * the document mouseup selection listener).
+   */
   private updateCanvasInteractivity(): void {
+    const drawingActive =
+      this.currentTool === 'ink' ||
+      this.currentTool === 'freetext' ||
+      (this.currentTool === 'highlight' && this.highlightTool.mode !== 'text');
+
     for (const { canvas } of this.bindings) {
       // The annotation canvas always receives pointer events; freetext editor
       // DOM sits above and has its own pointer-events via CSS.
       canvas.style.pointerEvents = 'auto';
+    }
+
+    for (const pageView of this.renderer.getAllPageViews()) {
+      pageView.textLayer.classList.toggle('drawing-active', drawingActive);
     }
   }
 
@@ -224,6 +251,11 @@ export class DemoApp {
     for (const pageView of this.renderer.getAllPageViews()) {
       this.bindCanvas(pageView);
     }
+
+    // Newly (re)built page DOM starts without the drawing-active class; re-apply
+    // the current tool's text-layer gating so drawing tools keep blocking text
+    // selection after navigation / zoom / view-mode rebuilds.
+    this.updateCanvasInteractivity();
   }
 
   private unbindCanvases(): void {
@@ -287,6 +319,10 @@ export class DemoApp {
     const canvas = pageView.annotationCanvas;
 
     if (this.currentTool === 'ink') {
+      // Prevent any residual text-selection gesture from starting and clear an
+      // existing selection so the drag is treated purely as drawing input.
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
       canvas.setPointerCapture?.(e.pointerId);
       const { x, y } = this.toCanvasPixels(pageView, e);
       this.previewPoints = [{ x, y }];
@@ -303,6 +339,9 @@ export class DemoApp {
       // not start a drag stroke in that case.
       if (this.highlightTool.mode === 'text') return;
 
+      // Free/box highlight is a drawing gesture: suppress text selection.
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
       canvas.setPointerCapture?.(e.pointerId);
       this.activePointerPage = pageView.pageNumber;
 
