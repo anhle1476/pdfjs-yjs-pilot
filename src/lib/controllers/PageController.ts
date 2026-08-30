@@ -225,6 +225,15 @@ export class PageController {
     return this.pdfDoc?.numPages ?? 0;
   }
 
+  /**
+   * Expose the underlying PDFDocumentProxy so higher-level services (search,
+   * outline) can extract per-page text content and resolve destinations.
+   * Returns null until a document has been initialized.
+   */
+  public getPdfDoc(): PDFDocumentProxy | null {
+    return this.pdfDoc;
+  }
+
   public getCurrentPage(): number {
     return this.currentPageNumber;
   }

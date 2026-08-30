@@ -87,6 +87,14 @@ export class PdfRenderer {
     return this.navigationController?.getTotalPages() ?? 0;
   }
 
+  /**
+   * Expose the underlying PDFDocumentProxy for higher-level services (search,
+   * outline). Returns null until a document has been loaded.
+   */
+  public getDocument(): pdfjsLib.PDFDocumentProxy | null {
+    return this.pdfDoc ?? this.pageController?.getPdfDoc() ?? null;
+  }
+
   // ----- Navigation -----
 
   public goToPage(pageNumber: number): void {

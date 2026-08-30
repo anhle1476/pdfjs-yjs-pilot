@@ -21,12 +21,15 @@ import {
   HitTester,
   TextLayerService,
   TextSelectionManager,
+  SearchController,
+  OutlineController,
   type PageView,
   type ViewMode,
   type HighlightMode,
 } from '../lib';
 import { yAnnotations } from './sync';
 import { TouchGestureManager } from './TouchGestureManager';
+import { SearchHighlighter } from './SearchHighlighter';
 
 export type DemoTool = 'ink' | 'highlight' | 'freetext' | 'select' | null;
 
@@ -58,6 +61,9 @@ export class DemoApp {
   public readonly highlightTool: HighlightTool;
   public readonly freeTextTool: FreeTextTool;
   public readonly hitTester: HitTester;
+  public readonly search: SearchController;
+  public readonly outline: OutlineController;
+  private readonly searchHighlighter: SearchHighlighter;
   private readonly touchGestureManager: TouchGestureManager;
 
   private textSelectionManager: TextSelectionManager;
@@ -83,6 +89,8 @@ export class DemoApp {
 
   private bindings: CanvasBinding[] = [];
   private storeUnsub: (() => void) | null = null;
+  private searchUnsub: (() => void) | null = null;
+  private searchHighlightToken = 0;
   private onDocumentMouseUp: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: DemoAppOptions = {}) {
@@ -102,6 +110,23 @@ export class DemoApp {
     });
 
     this.hitTester = new HitTester(this.renderer, this.store);
+    // Text-layer / search services (framework-free lib controllers driven by
+    // the renderer's public navigation + document surface).
+    this.search = new SearchController({
+      navigation: {
+        getCurrentPage: () => this.renderer.getCurrentPage(),
+        goToPage: (pageNumber: number) => this.renderer.goToPage(pageNumber),
+        getTotalPages: () => this.renderer.getTotalPages(),
+      },
+      getDocument: () => this.renderer.getDocument() as any,
+    });
+    this.outline = new OutlineController({
+      getDocument: () => this.renderer.getDocument() as any,
+      navigation: {
+        goToPage: (pageNumber: number) => this.renderer.goToPage(pageNumber),
+      },
+    });
+    this.searchHighlighter = new SearchHighlighter(this.renderer, this.search);
     // The text-selection manager resolves the browser selection into
     // normalized per-page ranges. Its TextLayerService is scoped to the
     // renderer's container so span queries stay within this viewer.
@@ -126,6 +151,19 @@ export class DemoApp {
 
     // Re-render committed annotations for every page.
     this.renderAllPages();
+
+    // Search/outline services can now read the loaded document. Reset the
+    // highlighter's per-page item cache and preload the outline (no-op UI wise
+    // if the document has none).
+    this.searchHighlighter.reset();
+    void this.outline.load();
+
+    // Re-highlight search matches whenever the query/selection changes. The
+    // highlighter is idempotent per page (clears prior markup first), so this
+    // is safe to run on every state change.
+    this.searchUnsub = this.search.subscribe(() => {
+      void this.reapplySearchHighlights();
+    });
 
     // Re-render committed annotations when the shared doc changes, whether
     // from local edits or remote peers. IMPORTANT: do NOT rebuild freetext
@@ -166,6 +204,9 @@ export class DemoApp {
       this.rebindCanvases();
       this.activateFreeTextForCurrentPage();
       this.renderAllPages();
+      // Single mode swaps the page DOM on navigation; re-apply highlights AFTER
+      // the new page's text layer exists.
+      void this.reapplySearchHighlights();
       this.options.onPageChange?.(pageNumber);
     });
 
@@ -174,6 +215,7 @@ export class DemoApp {
       this.rebindCanvases();
       this.activateFreeTextForCurrentPage();
       this.renderAllPages();
+      void this.reapplySearchHighlights();
       this.options.onZoomChange?.(scale);
     });
 
@@ -181,6 +223,7 @@ export class DemoApp {
       this.rebindCanvases();
       this.activateFreeTextForCurrentPage();
       this.renderAllPages();
+      void this.reapplySearchHighlights();
       this.options.onRotationChange?.(rotation);
     });
 
@@ -188,7 +231,55 @@ export class DemoApp {
       this.rebindCanvases();
       this.activateFreeTextForCurrentPage();
       this.renderAllPages();
+      void this.reapplySearchHighlights();
       this.options.onViewModeChange?.(mode);
+    });
+  }
+
+  /**
+   * Re-paint search-match highlights onto every rendered page's text layer and
+   * scroll the currently selected match into view. The text layer is built
+   * asynchronously by PageController on rebuild, so we retry briefly until glyph
+   * spans are present (or give up), keeping highlights in sync after zoom /
+   * rotation / view-mode / navigation rebuilds.
+   */
+  private async reapplySearchHighlights(): Promise<void> {
+    const token = ++this.searchHighlightToken;
+    const state = this.search.getState();
+    if (state.total === 0) {
+      this.searchHighlighter.clearAll();
+      return;
+    }
+    // Wait a couple of animation frames for the text layer spans to render on
+    // freshly rebuilt pages, then paint. Bail if a newer run superseded us.
+    await this.nextFrame();
+    if (token !== this.searchHighlightToken) return;
+    await this.searchHighlighter.highlightAll();
+    if (token !== this.searchHighlightToken) return;
+    // If no span rendered yet, retry once more on the next frame.
+    if (!this.hasRenderedHighlight()) {
+      await this.nextFrame();
+      if (token !== this.searchHighlightToken) return;
+      await this.searchHighlighter.highlightAll();
+      if (token !== this.searchHighlightToken) return;
+    }
+    this.searchHighlighter.scrollSelectedIntoView();
+  }
+
+  private hasRenderedHighlight(): boolean {
+    for (const v of this.renderer.getAllPageViews()) {
+      if (v.textLayer.querySelector('.search-highlight')) return true;
+    }
+    return false;
+  }
+
+  private nextFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => resolve());
+      } else {
+        setTimeout(resolve, 16);
+      }
     });
   }
 
@@ -869,6 +960,9 @@ export class DemoApp {
     this.unbindCanvases();
     this.storeUnsub?.();
     this.storeUnsub = null;
+    this.searchUnsub?.();
+    this.searchUnsub = null;
+    this.search.destroy();
     if (this.onDocumentMouseUp) {
       document.removeEventListener('mouseup', this.onDocumentMouseUp);
       this.onDocumentMouseUp = null;

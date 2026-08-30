@@ -145,6 +145,54 @@ của bạn + xử lý CORS/auth.
 
 ---
 
+## 11. Vite: CSS phải import từ JS, KHÔNG dùng `<link>` tĩnh vào file `.ts`/`.css` nguồn
+
+**Vấn đề**: `index.html` nạp `<link rel="stylesheet" href="/src/demo/style.css">`.
+Trong Vite **dev**, đường dẫn đó được phục vụ dưới dạng **JS module**
+(`content-type: text/javascript`, nội dung mở đầu bằng `import {createHotContext}`),
+KHÔNG phải `text/css`. Trình duyệt parse JS-as-CSS → gần như toàn bộ rule bị bỏ.
+Bug này có thể ẩn rất lâu nếu các style quan trọng đều là inline (như text-layer
+trong `PageController`), chỉ lộ ra khi một rule thuần-CSS (vd `.search-highlight`)
+không áp dụng.
+
+**Khi migrate**: nạp CSS bằng `import './style.css'` trong JS entry (đã sửa ở
+`main.ts`). Vite sẽ inject đúng ở dev và emit vào bundle ở production
+(`dist/assets/index-*.css`). Đừng trỏ `<link>` tới file nguồn trong `src/`.
+
+**Kiểm nhanh**: nếu một CSS rule "có trong file mà không áp dụng", kiểm
+`content-type` của file CSS server trả về, và liệt kê `document.styleSheets` xem
+rule có được parse không (đừng chỉ tin file trên đĩa).
+
+---
+
+## 12. Highlight text-layer: match trên CHÍNH text span DOM, đừng map qua `item.str`
+
+**Vấn đề**: vẽ search-highlight lên text-layer bằng cách map offset match (tính
+trên page text ghép từ `getTextContent().items[].str`) sang glyph span theo giả
+định "span khớp 1:1 với item" → highlight **lệch dần** về sau trang. Ba nguồn lệch:
+1. Item có `str === ''` KHÔNG tạo span (pdf.js bỏ) → lệch pairing.
+2. **Ligature**: pdf.js NFKC-normalize khi render (`ﬁ` → `fi`), span text dài hơn
+   `item.str`.
+3. Một số span có space thừa đầu/cuối so với `item.str`.
+
+**Cách đúng (bền vững)**: highlighter build "page text" từ **chính `span.textContent`
+của các glyph span** (đúng thứ tự DOM), rồi chạy đúng query trên chuỗi đó
+(`SearchController.matchText`) → offset khớp span tuyệt đối, độc lập item layout.
+Đây cũng là cách pdf.js `TextHighlighter` làm (chạy trên chuỗi đã render). Search
+controller vẫn lo `total/current/navigation`; highlighter vẽ độc lập bằng cùng
+query. Kiểm parity: `getState().total` phải bằng số `.search-highlight` ở scroll
+mode (mọi trang render).
+
+**Bonus**: khi normalize có xoá ký tự (gộp gạch cuối dòng `-\n`), map end-offset
+bằng `getOriginalIndex(normEnd - 1) + 1` để match không "nuốt" vùng bị xoá ngay
+sau nó.
+
+**Highlight styling**: dùng nền **bán trong suốt** (`rgba(...,0.4)`), KHÔNG force
+`color`, để glyph gốc trên canvas hiện xuyên qua. Selector phải đủ specificity
+thắng `.text-layer span { color: transparent }` (dùng `.text-layer .search-highlight`).
+
+---
+
 ## Checklist migration nhanh
 
 - [ ] Mang **đủ** CSS text-layer + set `--total-scale-factor` (mục 1); chạy test
@@ -156,4 +204,7 @@ của bạn + xử lý CORS/auth.
 - [ ] Rà z-index/pointer-events nếu thêm overlay (mục 8).
 - [ ] Adapter cho schema annotation nếu khác 0–1 (mục 7).
 - [ ] Không rebuild editor freetext trong store observer (mục 9).
+- [ ] Nạp CSS qua `import` từ JS, không `<link>` tĩnh vào `src/` (mục 11).
+- [ ] Nếu highlight text-layer: match trên span DOM text, không map qua item.str;
+      nền bán trong suốt, selector đủ specificity (mục 12).
 - [ ] `tsc --noEmit` + `npm test` + `npm run build` + `npx playwright test` xanh.

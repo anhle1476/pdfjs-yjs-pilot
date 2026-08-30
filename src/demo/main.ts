@@ -1,4 +1,5 @@
 import { DemoApp, type DemoTool } from './DemoApp';
+import './style.css';
 import {
   createSidebar,
   setActiveTool,
@@ -6,6 +7,7 @@ import {
   updateZoomInfo,
   updateViewModeInfo,
 } from './ui';
+import { createSearchUi, updateSearchUi } from './searchUI';
 import { provider, yViewState, clientId } from './sync';
 import { ViewStateStore } from '../lib';
 import { ViewSync } from './viewSync';
@@ -110,6 +112,23 @@ async function main(): Promise<void> {
     getHighlightMode: () => app.getHighlightMode(),
   });
 
+  // Search + Table-of-Contents UI. Wired to the DemoApp's lib controllers.
+  createSearchUi({
+    onQueryChange: (query) => app.search.setQuery(query),
+    onFindNext: () => app.search.findNext(),
+    onFindPrevious: () => app.search.findPrevious(),
+    onClear: () => app.search.clear(),
+    getSearchState: () => app.search.getState(),
+    loadOutline: () => app.outline.load(),
+    hasOutline: () => app.outline.hasOutline(),
+    onOutlineItemClick: (item) => {
+      void app.outline.goTo(item);
+    },
+  });
+
+  // Keep the search counter / prev-next buttons in sync with the controller.
+  app.search.subscribe(() => updateSearchUi());
+
   // Keyboard: Delete/Backspace removes the selected annotation when the
   // 'select' tool is active and focus is not inside an editable element.
   window.addEventListener('keydown', (e) => {
@@ -179,6 +198,23 @@ async function main(): Promise<void> {
   (window as any).__pdfViewState = {
     get: () => viewStateStore.getState(),
     set: (partial: any) => viewStateStore.setState(partial, 'e2e-remote'),
+  };
+
+  // Test hook: drive the search controller and read its state.
+  (window as any).__pdfSearch = {
+    setQuery: (q: string, opts?: any) => app.search.setQuery(q, opts),
+    findNext: () => app.search.findNext(),
+    findPrevious: () => app.search.findPrevious(),
+    clear: () => app.search.clear(),
+    getState: () => app.search.getState(),
+  };
+
+  // Test hook: drive the outline (table of contents) controller.
+  (window as any).__pdfOutline = {
+    load: () => app.outline.load(),
+    goTo: (item: any) => app.outline.goTo(item),
+    hasOutline: () => app.outline.hasOutline(),
+    getItems: () => app.outline.getItems(),
   };
 }
 

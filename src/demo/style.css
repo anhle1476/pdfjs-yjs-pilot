@@ -328,3 +328,151 @@ html, body {
   margin-top: 40vh;
   text-align: center;
 }
+
+/* ---- Search bar (overlay at the top of the viewer) ---- */
+.search-bar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.search-input {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  width: 180px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #2563eb;
+}
+
+.search-counter {
+  font-size: 12px;
+  color: #666;
+  min-width: 40px;
+  text-align: center;
+}
+
+.search-counter.not-found {
+  color: #dc2626;
+}
+
+.search-btn {
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.search-btn:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+.search-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toc-toggle-btn.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+/* ---- TOC side panel ---- */
+.toc-panel {
+  position: absolute;
+  top: 0;
+  left: 200px; /* sit just right of the sidebar */
+  width: 260px;
+  height: 100%;
+  background: #fafafa;
+  border-right: 1px solid #ddd;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+.toc-panel[hidden] {
+  display: none;
+}
+
+.toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #ddd;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.toc-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.toc-empty {
+  color: #999;
+  font-style: italic;
+  font-size: 13px;
+  padding: 8px 4px;
+}
+
+.toc-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.toc-item .toc-list {
+  padding-left: 14px;
+}
+
+.toc-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font-size: 13px;
+  color: #222;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.toc-link:hover {
+  background: #e8f0fe;
+}
+
+/* ---- Search-match highlights inside the text layer ---- */
+/* The highlight is a translucent colour wash laid over the transparent glyph
+   spans: we do NOT force a text colour, so the real glyphs painted on the
+   canvas below stay visible through the ~0.4-alpha background. Other matches
+   are yellow, the current match orange. */
+.text-layer .search-highlight {
+  background: rgba(255, 240, 102, 0.4);
+  border-radius: 2px;
+}
+
+.text-layer .search-highlight.selected {
+  background: rgba(255, 150, 50, 0.4);
+}

@@ -38,6 +38,7 @@ Nguyên tắc cốt lõi: **thư viện thuần API, host sở hữu I/O**. `src
 │  │  models/                InkObject / HighlightObject / FreeTextObject      ││
 │  │  drawers/               InkDrawOutliner / HighlightOutliner / Outline     ││
 │  │  services/              TextLayerService / TextSelectionManager           ││
+│  │                          SearchController / OutlineController              ││
 │  │  utils/                 TextCoordinateUtils                               ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                     │ WebSocket                               │
@@ -98,6 +99,18 @@ liệu).
 - `TextSelectionManager` — quy đổi `window.getSelection()` thành range chuẩn hoá
   theo trang.
 - `TextCoordinateUtils` — normalize/denormalize toạ độ, union rect.
+- `SearchController` — tìm kiếm toàn tài liệu (thay Ctrl+F). Trích text mọi trang
+  từ `PDFDocumentProxy`, `normalize()` (NFKC + gộp gạch cuối dòng + map dấu
+  cong) rồi match RegExp (`caseSensitive`/`entireWord`), con trỏ selected + wrap
+  vòng, `current/total`, debounce 250ms; khi match đổi trang gọi `goToPage`
+  (chạy cho cả single & scroll). API: `setQuery/findNext/findPrevious/clear/
+  getState/getSelectedMatch/getPageMatches/matchText/subscribe`. Framework-free.
+  - `matchText(text)`: chạy đúng query hiện tại trên một chuỗi bất kỳ, trả offset
+    trong chính chuỗi đó. Dùng để host highlight khớp **chính xác** text-layer
+    (xem `LESSONS_LEARNED.md` mục highlight alignment).
+- `OutlineController` — mục lục (TOC). `load()` (getOutline → cây), `hasOutline()`,
+  `resolvePageNumber(item)` (dest→page theo thuật toán pdf.js), `goTo(item)`
+  (resolve + goToPage). Xử lý PDF không có outline. Framework-free.
 
 ---
 
@@ -108,6 +121,15 @@ Tạo `Y.Doc`, `yAnnotations = doc.getArray('annotations')`,
 `yViewState = doc.getMap('viewState')`, `provider = new WebsocketProvider(...)`.
 Room mặc định `pdfjs-pilot-annotations`, override qua `?room=` (dùng để cô lập
 test). Xuất `clientId` (từ `doc.clientID`) để tag transaction view-state.
+
+### SearchHighlighter.ts + searchUI.ts — Search/TOC UI (host)
+- `SearchHighlighter` — vẽ match lên text-layer. Ghép `span.textContent` của các
+  glyph span (đúng text người dùng thấy), gọi `SearchController.matchText` trên
+  chuỗi đó → offset khớp span tuyệt đối, rồi bọc `<span class="search-highlight">`
+  (thêm `.selected` cho match hiện tại). Highlight-all; nền bán trong suốt để
+  chữ canvas hiện xuyên qua. Re-apply sau mỗi lần trang render lại.
+- `searchUI` — search bar (input + `[current]/[total]` + prev/next), chặn Ctrl+F,
+  và panel TOC đệ quy.
 
 ### DemoApp.ts — orchestrator
 Sở hữu `PdfRenderer`, `AnnotationStore`, 3 tool, `HitTester`,

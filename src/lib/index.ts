@@ -26,6 +26,32 @@ export type { TextNodeInfo } from './services/TextLayerService';
 export { TextSelectionManager } from './services/TextSelectionManager';
 export type { SelectedTextRange } from './services/TextSelectionManager';
 
+// PDF Search (Ctrl+F replacement) — framework-free port of pdf.js find
+export { SearchController, normalize, getOriginalIndex } from './services/SearchController';
+export type {
+  SearchOptions,
+  SearchStatus,
+  SearchState,
+  SelectedMatch,
+  PageMatch,
+  SearchControllerDeps,
+  SearchNavigationFacade,
+  SearchDocumentProxy,
+  SearchPageProxy,
+  SearchTextItem,
+  NormalizeResult,
+} from './services/SearchController';
+
+// Table of Contents (outline) — framework-free
+export { OutlineController } from './services/OutlineController';
+export type {
+  OutlineItem,
+  OutlineControllerDeps,
+  OutlineNavigationFacade,
+  OutlineDocumentProxy,
+  RawOutlineNode,
+} from './services/OutlineController';
+
 // Coordinate utilities
 export { TextCoordinateUtils } from './utils/TextCoordinateUtils';
 export type { Point } from './utils/TextCoordinateUtils';
