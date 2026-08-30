@@ -282,15 +282,14 @@ html, body {
   background-color: white;
   position: relative;
   margin: 20px auto;
-  /* Let the browser skip layout/paint for offscreen pages. The wrapper always
-     has an explicit inline width/height (set by PageController per scale), so
-     content-visibility:auto never collapses the box — the intrinsic-size hint
-     below is a fallback for the brief moment before the inline size applies.
-     This complements the IntersectionObserver virtualization and does not
-     affect the --total-scale-factor glyph sizing or search-highlight markup,
-     which live on the .text-layer child. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 800px;
+  /* NOTE: content-visibility:auto / contain-intrinsic-size were removed here.
+     Virtualization is already handled by PageController's IntersectionObserver
+     (lazy render/teardown), and every .page-view wrapper carries an explicit
+     inline width/height, so content-visibility provided no layout benefit while
+     its interaction with browser scroll anchoring could shift the scroll
+     position as offscreen pages toggled render state ("scroll jump"). Removing
+     it does NOT regress the perf win — the observer, not this CSS, decides what
+     rasters. */
 }
 
 #viewer-container canvas {
@@ -476,8 +475,23 @@ html, body {
 /* The highlight is a translucent colour wash laid over the transparent glyph
    spans: we do NOT force a text colour, so the real glyphs painted on the
    canvas below stay visible through the ~0.4-alpha background. Other matches
-   are yellow, the current match orange. */
+   are yellow, the current match orange.
+
+   CRITICAL: the broad `.text-layer span` rule above styles EVERY descendant
+   span, including the highlight <span> we inject INSIDE a glyph span. Left
+   unchecked it would give the inner highlight `position: absolute` (removing it
+   from the parent glyph's flow, collapsing the glyph to zero width) and re-apply
+   the per-glyph scaleX transform (double-scaling / mis-positioning it), so the
+   highlight visually shifts to the wrong place. pdf.js avoids this by scoping
+   glyph sizing to direct children and resetting its `.highlight` spans; we do
+   the same by explicitly neutralising positioning/transform/sizing here so the
+   highlight is a plain in-flow inline wash that inherits the glyph's own metrics. */
 .text-layer .search-highlight {
+  position: static;
+  transform: none;
+  font-size: inherit;
+  color: inherit;
+  white-space: inherit;
   background: rgba(255, 240, 102, 0.4);
   border-radius: 2px;
 }
