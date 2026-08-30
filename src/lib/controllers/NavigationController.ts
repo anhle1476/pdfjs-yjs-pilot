@@ -32,6 +32,7 @@ export class NavigationController {
 
     this.setupScrollListener();
     this.setupKeyboardShortcuts();
+    this.setupWheelZoom();
   }
 
   private setupScrollListener(): void {
@@ -68,6 +69,29 @@ export class NavigationController {
       }
     }
   }
+
+  /**
+   * Ctrl/Cmd + mouse wheel zooms the document (like most PDF viewers) instead
+   * of the browser's default page zoom. A plain wheel (no modifier) is left
+   * untouched so normal scrolling still works. The listener is non-passive
+   * because it must call preventDefault() when the modifier is held.
+   */
+  private setupWheelZoom(): void {
+    this.container.addEventListener(
+      'wheel',
+      (e: WheelEvent) => {
+        if (!e.ctrlKey && !e.metaKey) return; // plain wheel = scroll, leave it
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          this.zoomIn();
+        } else if (e.deltaY > 0) {
+          this.zoomOut();
+        }
+      },
+      { passive: false }
+    );
+  }
+
 
   private setupKeyboardShortcuts(): void {
     window.addEventListener('keydown', (e: KeyboardEvent) => {
